@@ -1,7 +1,15 @@
-import { Memory, CoupleInfo, DEFAULT_COUPLE_INFO, INITIAL_MEMORIES } from '../types';
+import {
+  Memory,
+  CoupleInfo,
+  BackgroundSettings,
+  DEFAULT_COUPLE_INFO,
+  DEFAULT_BG_SETTINGS,
+  INITIAL_MEMORIES
+} from '../types';
 
-const MEMORIES_KEY = 'goc_nho_binh_yen_memories_v2';
-const COUPLE_KEY = 'goc_nho_binh_yen_couple_v2';
+const MEMORIES_KEY = 'goc_nho_binh_yen_memories_v3';
+const COUPLE_KEY = 'goc_nho_binh_yen_couple_v3';
+const BG_SETTINGS_KEY = 'goc_nho_binh_yen_bg_v3';
 
 export const getStoredMemories = (): Memory[] => {
   try {
@@ -48,10 +56,32 @@ export const saveCoupleInfoToStorage = (info: CoupleInfo): void => {
   }
 };
 
+export const getStoredBackgroundSettings = (): BackgroundSettings => {
+  try {
+    const raw = localStorage.getItem(BG_SETTINGS_KEY);
+    if (!raw) {
+      localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(DEFAULT_BG_SETTINGS));
+      return DEFAULT_BG_SETTINGS;
+    }
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error('Lỗi khi đọc background settings:', error);
+    return DEFAULT_BG_SETTINGS;
+  }
+};
+
+export const saveBackgroundSettingsToStorage = (settings: BackgroundSettings): void => {
+  try {
+    localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(settings));
+  } catch (error) {
+    console.error('Lỗi khi lưu background settings:', error);
+  }
+};
+
 /**
- * Nén ảnh trước khi lưu vào localStorage để tránh vượt quá hạn mức 5MB của trình duyệt
+ * Nén ảnh trước khi lưu vào localStorage để tối ưu cho web và tránh tràn bộ nhớ
  */
-export const compressImageFile = (file: File, maxWidth = 1200, quality = 0.85): Promise<string> => {
+export const compressImageFile = (file: File, maxWidth = 1280, quality = 0.85): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -76,6 +106,16 @@ export const compressImageFile = (file: File, maxWidth = 1200, quality = 0.85): 
         }
 
         ctx.drawImage(img, 0, 0, width, height);
+        // Ưu tiên WebP nếu trình duyệt hỗ trợ, nếu không dùng JPEG chất lượng cao
+        try {
+          const webpUrl = canvas.toDataURL('image/webp', quality);
+          if (webpUrl.startsWith('data:image/webp')) {
+            resolve(webpUrl);
+            return;
+          }
+        } catch {
+          // fallback
+        }
         const dataUrl = canvas.toDataURL('image/jpeg', quality);
         resolve(dataUrl);
       };

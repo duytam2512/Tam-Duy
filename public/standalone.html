@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Góc Nhỏ Bình Yên • Nơi Lưu Giữ Kỷ Niệm Của Hai Đứa</title>
-  <meta name="description" content="Album kỷ niệm tình yêu lãng mạn, đếm ngày yêu nhau và lưu giữ từng khoảnh khắc ngọt ngào của hai đứa.">
+  <meta name="description" content="Album kỷ niệm tình yêu lãng mạn, đếm ngày yêu nhau, tùy chỉnh hình nền web và lưu giữ từng khoảnh khắc ngọt ngào của hai đứa.">
 
   <!-- 1. Tailwind CSS qua CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -66,156 +66,249 @@
     }
   </style>
 </head>
-<body class="bg-[#FFFDF9] min-h-screen selection:bg-rosePastel/30 selection:text-espresso">
+<body class="relative min-h-screen selection:bg-rosePastel/30 selection:text-espresso">
 
-  <!-- HEADER & HERO SECTION -->
-  <header class="pt-8 pb-6 px-4 max-w-5xl mx-auto text-center">
-    <!-- Huy hiệu nhỏ -->
-    <div class="inline-flex items-center gap-2 text-xs font-semibold text-wood bg-[#F9F6F0] px-4 py-1.5 rounded-full border border-wood/15 mb-4">
-      <i data-lucide="heart" class="w-4 h-4 text-rosePastel fill-rosePastel animate-pulse"></i>
-      <span>Kho Kỷ Niệm Của Hai Đứa</span>
-    </div>
-
-    <!-- Tên hai người -->
-    <div class="inline-flex items-center gap-3 mb-2 bg-white px-5 py-1.5 rounded-full border border-rosePastel/30 shadow-xs">
-      <span id="name-one" class="font-serif font-bold text-lg text-espresso">Anh</span>
-      <i data-lucide="heart" class="w-4 h-4 text-rosePastel fill-rosePastel"></i>
-      <span id="name-two" class="font-serif font-bold text-lg text-espresso">Em</span>
-    </div>
-
-    <!-- Tiêu đề & Dòng phụ -->
-    <h1 class="font-serif text-3xl sm:text-5xl font-bold text-espresso tracking-tight mb-2">
-      Góc Nhỏ Bình Yên
-    </h1>
-    <p class="font-handwriting text-xl sm:text-2xl text-wood max-w-lg mx-auto mb-6">
-      "Nơi lưu giữ từng khoảnh khắc và kỷ niệm dịu dàng của hai đứa."
-    </p>
-
-    <!-- ĐỒNG HỒ ĐẾM NGÀY YÊU NHAU (Love Days Counter) -->
-    <div class="card-pastel rounded-3xl p-5 sm:p-7 max-w-xl mx-auto my-6 text-center">
-      <div class="text-xs uppercase tracking-wider text-wood font-semibold mb-3 flex items-center justify-center gap-1.5">
-        <i data-lucide="clock" class="w-4 h-4 text-rosePastel"></i>
-        <span>Chúng mình đã yêu nhau được</span>
-      </div>
-
-      <div class="grid grid-cols-4 gap-2 sm:gap-4 max-w-sm mx-auto">
-        <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-wood/10 shadow-xs">
-          <div id="days" class="text-2xl sm:text-3xl font-serif font-bold text-roseDeep">0</div>
-          <div class="text-[11px] text-wood font-medium">Ngày</div>
-        </div>
-        <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-wood/10 shadow-xs">
-          <div id="hours" class="text-2xl sm:text-3xl font-serif font-bold text-espresso">0</div>
-          <div class="text-[11px] text-wood font-medium">Giờ</div>
-        </div>
-        <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-wood/10 shadow-xs">
-          <div id="minutes" class="text-2xl sm:text-3xl font-serif font-bold text-espresso">0</div>
-          <div class="text-[11px] text-wood font-medium">Phút</div>
-        </div>
-        <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-wood/10 shadow-xs">
-          <div id="seconds" class="text-2xl sm:text-3xl font-serif font-bold text-rosePastel">0</div>
-          <div class="text-[11px] text-wood font-medium">Giây</div>
-        </div>
-      </div>
-
-      <div class="mt-3 text-xs text-wood">
-        Kể từ ngày <span id="start-date-text" class="font-semibold text-roseDeep">14/02/2023</span>
-      </div>
-
-      <!-- Nút hành động đầu trang -->
-      <div class="flex items-center justify-center gap-3 mt-5 pt-4 border-t border-wood/10">
-        <button onclick="toggleUploadModal()" class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-rosePastel hover:bg-roseDeep text-white font-medium text-xs sm:text-sm shadow-md transition-all active:scale-95">
-          <i data-lucide="sparkles" class="w-4 h-4"></i>
-          <span>+ Đăng Kỷ Niệm Mới</span>
-        </button>
-        <button onclick="editLoveInfo()" class="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-beige text-wood text-xs border border-wood/20 transition-all">
-          <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
-          <span>Đổi ngày / Tên</span>
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <!-- FORM ĐĂNG KỶ NIỆM (MODAL POPUP) -->
-  <div id="upload-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/45 backdrop-blur-xs">
-    <div class="bg-[#FFFDF9] rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-wood/20 shadow-2xl relative my-6 max-h-[90vh] overflow-y-auto">
-      <button onclick="toggleUploadModal()" class="absolute top-5 right-5 p-2 text-wood hover:text-espresso rounded-full">
-        <i data-lucide="x" class="w-5 h-5"></i>
-      </button>
-
-      <div class="mb-4">
-        <span class="text-xs font-semibold text-roseDeep bg-rosePastel/15 px-3 py-1 rounded-full">Thêm Khoảnh Khắc</span>
-        <h2 class="font-serif text-2xl font-bold text-espresso mt-2">Đăng Kỷ Niệm Của Hai Đứa</h2>
-        <p class="text-xs text-wood">Ghi lại từng hình ảnh và cảm xúc dịu dàng</p>
-      </div>
-
-      <form id="memory-form" onsubmit="handleSaveMemory(event)" class="space-y-4">
-        <!-- Tải ảnh / Chọn ảnh -->
-        <div>
-          <label class="block text-xs font-semibold text-wood mb-1">Ảnh kỷ niệm *</label>
-          <div id="preview-container" class="hidden mb-2 relative rounded-xl overflow-hidden border border-rosePastel/30">
-            <img id="image-preview" src="" alt="Xem trước" class="w-full h-48 object-cover">
-            <button type="button" onclick="clearSelectedImage()" class="absolute top-2 right-2 p-1 bg-black/60 text-white rounded-full">
-              <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
-          </div>
-          <input type="file" id="file-input" accept="image/*" onchange="handleImageSelect(event)" class="w-full text-xs text-wood file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-rosePastel/20 file:text-roseDeep hover:file:bg-rosePastel/30 cursor-pointer">
-          <input type="url" id="url-input" placeholder="Hoặc dán liên kết URL ảnh..." oninput="handleUrlInput(event)" class="mt-2 w-full px-3 py-2 text-xs rounded-xl border border-wood/20 bg-white">
-        </div>
-
-        <!-- Ngày kỷ niệm & Địa điểm -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-semibold text-wood mb-1">Ngày kỷ niệm *</label>
-            <input type="date" id="memory-date" required class="w-full px-3 py-2 text-xs rounded-xl border border-wood/20 bg-white">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-wood mb-1">Địa điểm</label>
-            <input type="text" id="memory-location" placeholder="Ví dụ: Tiệm cà phê nhỏ, Đà Lạt..." class="w-full px-3 py-2 text-xs rounded-xl border border-wood/20 bg-white">
-          </div>
-        </div>
-
-        <!-- Khung cảm xúc nhật ký -->
-        <div>
-          <label class="block text-xs font-semibold text-wood mb-1">Dòng cảm xúc / Nhật ký *</label>
-          <textarea id="memory-caption" rows="3" required placeholder="Hôm ấy trời xanh và nụ cười em thật dịu dàng..." class="w-full px-3 py-2 text-xs rounded-xl border border-wood/20 bg-white resize-none"></textarea>
-        </div>
-
-        <div class="flex justify-end gap-2 pt-2">
-          <button type="button" onclick="toggleUploadModal()" class="px-4 py-2 text-xs text-wood rounded-xl hover:bg-beige">Hủy</button>
-          <button type="submit" class="px-6 py-2 text-xs font-semibold text-white bg-rosePastel hover:bg-roseDeep rounded-xl shadow-xs transition-all">
-            Lưu Kỷ Niệm
-          </button>
-        </div>
-      </form>
-    </div>
+  <!-- LỚP HÌNH NỀN TÙY BIẾN CHO GIAO DIỆN WEB -->
+  <div id="custom-bg-container" class="fixed inset-0 z-0 pointer-events-none transition-all duration-700 bg-cover bg-center">
+    <div id="custom-bg-overlay" class="absolute inset-0 bg-[#FFFDF9] transition-opacity duration-500"></div>
   </div>
 
-  <!-- BẢNG KỶ NIỆM (MEMORY FEED & GALLERY) -->
-  <main class="max-w-6xl mx-auto px-4 pb-20">
-    <!-- Thanh tìm kiếm & lọc -->
-    <div class="card-pastel rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-      <div class="relative w-full sm:w-72">
-        <i data-lucide="search" class="w-4 h-4 text-wood absolute left-3 top-2.5"></i>
-        <input type="text" id="search-input" oninput="renderMemories()" placeholder="Tìm theo cảm xúc, địa điểm..." class="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-wood/20 bg-white">
+  <!-- NỘI DUNG CHÍNH (NỔI TRÊN NỀN) -->
+  <div class="relative z-10">
+
+    <!-- HEADER & HERO SECTION -->
+    <header class="pt-8 pb-6 px-4 max-w-5xl mx-auto text-center">
+      <div class="flex items-center justify-between gap-2 max-w-md mx-auto mb-4">
+        <!-- Huy hiệu nhỏ -->
+        <div class="inline-flex items-center gap-2 text-xs font-semibold text-wood bg-[#FFFDF9]/90 px-4 py-1.5 rounded-full border border-wood/15 shadow-2xs">
+          <i data-lucide="heart" class="w-4 h-4 text-rosePastel fill-rosePastel animate-pulse"></i>
+          <span>Kho Kỷ Niệm Của Hai Đứa</span>
+        </div>
+
+        <!-- Nút Đổi Hình Nền Web -->
+        <button onclick="toggleBgModal()" class="flex items-center gap-1.5 text-xs font-semibold text-roseDeep bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3.5 py-1.5 rounded-full border border-wood/20 shadow-2xs transition-all">
+          <i data-lucide="palette" class="w-3.5 h-3.5"></i>
+          <span>Đổi Nền Web</span>
+        </button>
       </div>
 
-      <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
-        <button onclick="setFilter('Tất cả')" class="filter-btn active text-xs px-3 py-1.5 rounded-full bg-rosePastel text-white font-medium">Tất cả</button>
-        <button onclick="setFilter('Hẹn hò')" class="filter-btn text-xs px-3 py-1.5 rounded-full bg-white text-wood border border-wood/15">Hẹn hò</button>
-        <button onclick="setFilter('Du lịch')" class="filter-btn text-xs px-3 py-1.5 rounded-full bg-white text-wood border border-wood/15">Du lịch</button>
-        <button onclick="setFilter('Kỷ niệm')" class="filter-btn text-xs px-3 py-1.5 rounded-full bg-white text-wood border border-wood/15">Kỷ niệm</button>
+      <!-- Tên hai người -->
+      <div class="inline-flex items-center gap-3 mb-2 bg-[#FFFDF9]/95 px-5 py-1.5 rounded-full border border-rosePastel/30 shadow-xs">
+        <span id="name-one" class="font-serif font-bold text-lg text-espresso">Anh</span>
+        <i data-lucide="heart" class="w-4 h-4 text-rosePastel fill-rosePastel"></i>
+        <span id="name-two" class="font-serif font-bold text-lg text-espresso">Em</span>
+      </div>
+
+      <!-- Tiêu đề & Dòng phụ -->
+      <h1 class="font-serif text-3xl sm:text-5xl font-bold text-espresso tracking-tight mb-2">
+        Góc Nhỏ Bình Yên
+      </h1>
+      <p class="font-handwriting text-xl sm:text-2xl text-wood max-w-lg mx-auto mb-6">
+        "Nơi lưu giữ từng khoảnh khắc và kỷ niệm dịu dàng của hai đứa."
+      </p>
+
+      <!-- ĐỒNG HỒ ĐẾM NGÀY YÊU NHAU (Love Days Counter) -->
+      <div class="card-pastel rounded-3xl p-5 sm:p-7 max-w-xl mx-auto my-6 text-center shadow-lg">
+        <div class="text-xs uppercase tracking-wider text-wood font-semibold mb-3 flex items-center justify-center gap-1.5">
+          <i data-lucide="clock" class="w-4 h-4 text-rosePastel"></i>
+          <span>Chúng mình đã yêu nhau được</span>
+        </div>
+
+        <div class="grid grid-cols-4 gap-2 sm:gap-4 max-w-sm mx-auto">
+          <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-wood/10 shadow-xs">
+            <div id="days" class="text-2xl sm:text-3xl font-serif font-bold text-roseDeep">0</div>
+            <div class="text-[11px] text-wood font-medium">Ngày</div>
+          </div>
+          <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-wood/10 shadow-xs">
+            <div id="hours" class="text-2xl sm:text-3xl font-serif font-bold text-espresso">0</div>
+            <div class="text-[11px] text-wood font-medium">Giờ</div>
+          </div>
+          <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-wood/10 shadow-xs">
+            <div id="minutes" class="text-2xl sm:text-3xl font-serif font-bold text-espresso">0</div>
+            <div class="text-[11px] text-wood font-medium">Phút</div>
+          </div>
+          <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-wood/10 shadow-xs">
+            <div id="seconds" class="text-2xl sm:text-3xl font-serif font-bold text-rosePastel">0</div>
+            <div class="text-[11px] text-wood font-medium">Giây</div>
+          </div>
+        </div>
+
+        <div class="mt-3 text-xs text-wood">
+          Kể từ ngày <span id="start-date-text" class="font-semibold text-roseDeep">14/02/2023</span>
+        </div>
+
+        <!-- Nút hành động đầu trang -->
+        <div class="flex items-center justify-center gap-3 mt-5 pt-4 border-t border-wood/10">
+          <button onclick="toggleUploadModal()" class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-rosePastel hover:bg-roseDeep text-white font-medium text-xs sm:text-sm shadow-md transition-all active:scale-95">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            <span>+ Đăng Kỷ Niệm Mới</span>
+          </button>
+          <button onclick="editLoveInfo()" class="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-beige text-wood text-xs border border-wood/20 transition-all">
+            <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+            <span>Đổi ngày / Tên</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- FORM ĐĂNG KỶ NIỆM (MODAL POPUP) -->
+    <div id="upload-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/45 backdrop-blur-xs">
+      <div class="bg-[#FFFDF9] rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-wood/20 shadow-2xl relative my-6 max-h-[90vh] overflow-y-auto">
+        <button onclick="toggleUploadModal()" class="absolute top-5 right-5 p-2 text-wood hover:text-espresso rounded-full">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+
+        <div class="mb-4">
+          <span class="text-xs font-semibold text-roseDeep bg-rosePastel/15 px-3 py-1 rounded-full">Thêm Khoảnh Khắc</span>
+          <h2 class="font-serif text-2xl font-bold text-espresso mt-2">Đăng Kỷ Niệm Của Hai Đứa</h2>
+          <p class="text-xs text-wood">Ghi lại từng hình ảnh và cảm xúc dịu dàng</p>
+        </div>
+
+        <form id="memory-form" onsubmit="handleSaveMemory(event)" class="space-y-4">
+          <!-- Tải ảnh / Chọn ảnh mẫu -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-xs font-semibold text-wood">Ảnh kỷ niệm *</label>
+              <button type="button" onclick="toggleSamplePhotos()" class="text-[11px] text-roseDeep hover:underline font-semibold">
+                Chọn nhanh từ kho ảnh mẫu
+              </button>
+            </div>
+
+            <div id="sample-picker" class="hidden mb-2.5 p-2.5 bg-beige rounded-xl border border-wood/15 max-h-36 overflow-y-auto">
+              <div class="grid grid-cols-4 gap-1.5" id="sample-list"></div>
+            </div>
+
+            <div id="preview-container" class="hidden mb-2 relative rounded-xl overflow-hidden border border-rosePastel/30">
+              <img id="image-preview" src="" alt="Xem trước" class="w-full h-48 object-cover">
+              <button type="button" onclick="clearSelectedImage()" class="absolute top-2 right-2 p-1 bg-black/60 text-white rounded-full">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+            <input type="file" id="file-input" accept="image/*" onchange="handleImageSelect(event)" class="w-full text-xs text-wood file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-rosePastel/20 file:text-roseDeep hover:file:bg-rosePastel/30 cursor-pointer">
+            <input type="url" id="url-input" placeholder="Hoặc dán liên kết URL ảnh..." oninput="handleUrlInput(event)" class="mt-2 w-full px-3 py-2 text-xs rounded-xl border border-wood/20 bg-white">
+          </div>
+
+          <!-- Ngày kỷ niệm & Địa điểm -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-wood mb-1">Ngày kỷ niệm *</label>
+              <input type="date" id="memory-date" required class="w-full px-3 py-2 text-xs rounded-xl border border-wood/20 bg-white">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-wood mb-1">Địa điểm</label>
+              <input type="text" id="memory-location" placeholder="Ví dụ: Tiệm cà phê nhỏ, Đà Lạt..." class="w-full px-3 py-2 text-xs rounded-xl border border-wood/20 bg-white">
+            </div>
+          </div>
+
+          <!-- Gợi ý viết caption thông minh -->
+          <div class="bg-beige/70 p-3 rounded-xl border border-wood/15">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-semibold text-espresso flex items-center gap-1">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-roseDeep"></i> Gợi ý dòng cảm xúc
+              </span>
+              <button type="button" onclick="generateSampleCaption()" class="text-[11px] text-roseDeep hover:underline">
+                Đổi câu khác
+              </button>
+            </div>
+            <p id="sample-caption-text" onclick="applySampleCaption()" class="font-handwriting text-lg text-wood cursor-pointer hover:text-espresso bg-white p-2 rounded-lg border border-wood/10">
+              "Bình yên là khi ngồi cạnh em, nghe bản nhạc quen và thấy lòng an tĩnh."
+            </p>
+          </div>
+
+          <!-- Khung cảm xúc nhật ký -->
+          <div>
+            <label class="block text-xs font-semibold text-wood mb-1">Dòng cảm xúc / Nhật ký *</label>
+            <textarea id="memory-caption" rows="3" required placeholder="Hôm ấy trời xanh và nụ cười em thật dịu dàng..." class="w-full px-3 py-2 text-xs rounded-xl border border-wood/20 bg-white resize-none"></textarea>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="toggleUploadModal()" class="px-4 py-2 text-xs text-wood rounded-xl hover:bg-beige">Hủy</button>
+            <button type="submit" class="px-6 py-2 text-xs font-semibold text-white bg-rosePastel hover:bg-roseDeep rounded-xl shadow-xs transition-all">
+              Lưu Kỷ Niệm
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 
-    <!-- Lưới hiển thị các thẻ ảnh kỷ niệm -->
-    <div id="memory-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      <!-- Sẽ được hiển thị bằng JavaScript -->
+    <!-- MODAL ĐỔI HÌNH NỀN WEB -->
+    <div id="bg-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/45 backdrop-blur-xs">
+      <div class="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-wood/20 shadow-2xl relative my-6">
+        <button onclick="toggleBgModal()" class="absolute top-5 right-5 p-2 text-wood hover:text-espresso rounded-full">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+
+        <h3 class="font-serif text-xl font-bold text-espresso mb-1">Đổi Hình Nền Góc Nhỏ</h3>
+        <p class="text-xs text-wood mb-4">Chọn nền phong cảnh có sẵn hoặc tải ảnh riêng của hai đứa</p>
+
+        <div class="grid grid-cols-3 gap-2 mb-4">
+          <button onclick="setWebBg('default')" class="p-2 border border-wood/15 rounded-xl text-center hover:border-rosePastel bg-white">
+            <div class="w-full h-12 rounded-lg bg-gradient-to-br from-[#FFFDF9] via-[#FAF6F0] to-[#F5EFE6] mb-1"></div>
+            <span class="text-[10px] text-espresso font-medium">Mặc định</span>
+          </button>
+          <button onclick="setWebBg('forest')" class="p-2 border border-wood/15 rounded-xl text-center hover:border-rosePastel bg-white">
+            <img src="https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=200&q=70" class="w-full h-12 object-cover rounded-lg mb-1">
+            <span class="text-[10px] text-espresso font-medium">Đồi Thông</span>
+          </button>
+          <button onclick="setWebBg('sunset')" class="p-2 border border-wood/15 rounded-xl text-center hover:border-rosePastel bg-white">
+            <img src="https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=200&q=70" class="w-full h-12 object-cover rounded-lg mb-1">
+            <span class="text-[10px] text-espresso font-medium">Hoàng Hôn</span>
+          </button>
+          <button onclick="setWebBg('sea')" class="p-2 border border-wood/15 rounded-xl text-center hover:border-rosePastel bg-white">
+            <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=200&q=70" class="w-full h-12 object-cover rounded-lg mb-1">
+            <span class="text-[10px] text-espresso font-medium">Biển Chiều</span>
+          </button>
+          <button onclick="setWebBg('flowers')" class="p-2 border border-wood/15 rounded-xl text-center hover:border-rosePastel bg-white">
+            <img src="https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=200&q=70" class="w-full h-12 object-cover rounded-lg mb-1">
+            <span class="text-[10px] text-espresso font-medium">Vườn Hoa</span>
+          </button>
+          <button onclick="setWebBg('stars')" class="p-2 border border-wood/15 rounded-xl text-center hover:border-rosePastel bg-white">
+            <img src="https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=200&q=70" class="w-full h-12 object-cover rounded-lg mb-1">
+            <span class="text-[10px] text-espresso font-medium">Bầu Trời Sao</span>
+          </button>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-xs font-semibold text-wood mb-1">Độ trong suốt nền ảnh (<span id="bg-opacity-val">20%</span>)</label>
+          <input type="range" id="bg-opacity" min="0.05" max="0.75" step="0.05" value="0.2" oninput="changeBgOpacity(this.value)" class="w-full accent-rosePastel">
+        </div>
+
+        <div class="text-right">
+          <button onclick="toggleBgModal()" class="px-5 py-2 text-xs font-semibold text-white bg-rosePastel hover:bg-roseDeep rounded-xl">Xong</button>
+        </div>
+      </div>
     </div>
-  </main>
+
+    <!-- BẢNG KỶ NIỆM (MEMORY FEED & GALLERY) -->
+    <main class="max-w-6xl mx-auto px-4 pb-20">
+      <!-- Thanh tìm kiếm & lọc -->
+      <div class="card-pastel rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+        <div class="relative w-full sm:w-72">
+          <i data-lucide="search" class="w-4 h-4 text-wood absolute left-3 top-2.5"></i>
+          <input type="text" id="search-input" oninput="renderMemories()" placeholder="Tìm theo cảm xúc, địa điểm..." class="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-wood/20 bg-white">
+        </div>
+
+        <div class="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+          <button onclick="setFilter('Tất cả')" class="filter-btn active text-xs px-3 py-1.5 rounded-full bg-rosePastel text-white font-medium">Tất cả</button>
+          <button onclick="setFilter('Hẹn hò')" class="filter-btn text-xs px-3 py-1.5 rounded-full bg-white text-wood border border-wood/15">Hẹn hò</button>
+          <button onclick="setFilter('Du lịch')" class="filter-btn text-xs px-3 py-1.5 rounded-full bg-white text-wood border border-wood/15">Du lịch</button>
+          <button onclick="setFilter('Kỷ niệm')" class="filter-btn text-xs px-3 py-1.5 rounded-full bg-white text-wood border border-wood/15">Kỷ niệm</button>
+          <button onclick="setFilter('Bình yên')" class="filter-btn text-xs px-3 py-1.5 rounded-full bg-white text-wood border border-wood/15">Bình yên</button>
+          <button onclick="setFilter('Món ngon')" class="filter-btn text-xs px-3 py-1.5 rounded-full bg-white text-wood border border-wood/15">Món ngon</button>
+        </div>
+      </div>
+
+      <!-- Lưới hiển thị các thẻ ảnh kỷ niệm -->
+      <div id="memory-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Sẽ được hiển thị bằng JavaScript -->
+      </div>
+    </main>
+
+  </div>
 
   <!-- JAVASCRIPT XỬ LÝ LƯU TRỮ VÀ GIAO DIỆN -->
   <script>
-    // Dữ liệu mẫu ban đầu
+    // 12 Kỷ niệm mẫu ban đầu phong phú, ấm áp
     const DEFAULT_MEMORIES = [
       {
         id: '1',
@@ -224,7 +317,7 @@
         location: 'Tiệm Cà Phê Trong Rừng, Đà Lạt',
         caption: 'Buổi sáng se lạnh bên ly cacao nóng, ngồi nghe tiếng thông reo và ngắm nụ cười ấm áp của em.',
         tag: 'Du lịch',
-        likes: 24
+        likes: 38
       },
       {
         id: '2',
@@ -233,7 +326,7 @@
         location: 'Bờ Hồ Tây, Hà Nội',
         caption: 'Hoàng hôn buông màu hồng cam rực rỡ cả góc trời, hai đứa đạp xe quanh hồ rồi ghé ăn kem.',
         tag: 'Hẹn hò',
-        likes: 31
+        likes: 52
       },
       {
         id: '3',
@@ -242,24 +335,136 @@
         location: 'Góc Bếp Nhỏ Của Hai Đứa',
         caption: 'Cùng nhau nấu bữa tối ấm cúng, bật bản nhạc jazz nhẹ nhàng và cùng thổi nến kỷ niệm tròn 1 năm.',
         tag: 'Kỷ niệm',
-        likes: 42
+        likes: 64
+      },
+      {
+        id: '4',
+        imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80',
+        date: '2024-06-20',
+        location: 'Bãi Biển Quy Nhơn',
+        caption: 'Đi dạo trên bãi cát mịn lúc sáng sớm, nhặt những chiếc vỏ ốc nhỏ xinh dưới ánh ban mai.',
+        tag: 'Du lịch',
+        likes: 45
+      },
+      {
+        id: '5',
+        imageUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=1000&q=80',
+        date: '2024-07-12',
+        location: 'Góc Ban Công Nhỏ',
+        caption: 'Sáng chủ nhật tưới hoa, pha một ấm trà hoa cúc và cùng em đọc quyển sách yêu thích.',
+        tag: 'Bình yên',
+        likes: 31
+      },
+      {
+        id: '6',
+        imageUrl: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=1000&q=80',
+        date: '2024-08-30',
+        location: 'Phố Cổ Hội An',
+        caption: 'Thả chiếc đèn hoa đăng trôi theo dòng sông Hoài, anh chỉ ước hai đứa mãi nắm tay nhau như thế.',
+        tag: 'Du lịch',
+        likes: 59
+      },
+      {
+        id: '7',
+        imageUrl: 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=1000&q=80',
+        date: '2024-09-18',
+        location: 'Vườn Hoa Cúc Họa Mi',
+        caption: 'Gió chớm lạnh mang theo mùa cúc họa mi trắng muốt. Nhìn em cài cành hoa lên tóc, tim anh lại rộn ràng.',
+        tag: 'Hẹn hò',
+        likes: 47
+      },
+      {
+        id: '8',
+        imageUrl: 'https://images.unsplash.com/photo-1543353071-10c8ba85a904?auto=format&fit=crop&w=1000&q=80',
+        date: '2025-03-22',
+        location: 'Bữa Cơm Gia Đình Ấm Cúng',
+        caption: 'Mâm cơm gia đình giản dị mà thơm lừng tình yêu thương, ăn miếng nào cũng thấy ngập tràn hạnh phúc.',
+        tag: 'Món ngon',
+        likes: 54
       }
     ];
 
+    const SAMPLE_PHOTO_PRESETS = [
+      { name: "Cà phê ấm", url: "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=600&q=80" },
+      { name: "Hoàng hôn", url: "https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?auto=format&fit=crop&w=600&q=80" },
+      { name: "Biển xanh", url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80" },
+      { name: "Đồi núi", url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80" },
+      { name: "Bếp nhỏ", url: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&q=80" },
+      { name: "Đọc sách", url: "https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?auto=format&fit=crop&w=600&q=80" },
+      { name: "Vườn hoa", url: "https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=600&q=80" },
+      { name: "Bầu trời sao", url: "https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=600&q=80" }
+    ];
+
+    const SAMPLE_CAPTIONS = [
+      "Bình yên là khi ngồi cạnh em, nghe bản nhạc quen và thấy lòng an tĩnh.",
+      "Cùng nhau đi qua những ngày nắng nhẹ, gom lại thành một góc trời bình yên.",
+      "Thế giới rộng lớn là thế, nhưng an lòng nhất vẫn là khi ở cạnh bên em.",
+      "Mỗi khoảnh khắc bên em đều là một trang nhật ký dịu dàng nhất đời anh.",
+      "Nụ cười em hôm nay xinh như hoa sớm, sưởi ấm cả một mùa đông dài."
+    ];
+
+    let captionIndex = 0;
+
     // Khởi tạo State từ LocalStorage
-    let memories = JSON.parse(localStorage.getItem('standalone_memories')) || DEFAULT_MEMORIES;
-    let coupleInfo = JSON.parse(localStorage.getItem('standalone_couple')) || {
+    let memories = JSON.parse(localStorage.getItem('standalone_memories_v3')) || DEFAULT_MEMORIES;
+    let coupleInfo = JSON.parse(localStorage.getItem('standalone_couple_v3')) || {
       nameOne: 'Anh',
       nameTwo: 'Em',
       startDate: '2023-02-14'
     };
     let currentFilter = 'Tất cả';
     let currentImageBase64 = '';
+    let currentBg = localStorage.getItem('standalone_bg_v3') || 'default';
+    let currentBgOpacity = localStorage.getItem('standalone_bg_op_v3') || '0.2';
 
     // Lưu vào LocalStorage
     function saveToStorage() {
-      localStorage.setItem('standalone_memories', JSON.stringify(memories));
-      localStorage.setItem('standalone_couple', JSON.stringify(coupleInfo));
+      localStorage.setItem('standalone_memories_v3', JSON.stringify(memories));
+      localStorage.setItem('standalone_couple_v3', JSON.stringify(coupleInfo));
+      localStorage.setItem('standalone_bg_v3', currentBg);
+      localStorage.setItem('standalone_bg_op_v3', currentBgOpacity);
+    }
+
+    // Đổi hình nền web
+    function applyWebBg() {
+      const container = document.getElementById('custom-bg-container');
+      const overlay = document.getElementById('custom-bg-overlay');
+      const opacity = parseFloat(currentBgOpacity);
+
+      document.getElementById('bg-opacity-val').innerText = Math.round(opacity * 100) + '%';
+      document.getElementById('bg-opacity').value = opacity;
+
+      const bgUrls = {
+        forest: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1920&q=80',
+        sunset: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=1920&q=80',
+        sea: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1920&q=80',
+        flowers: 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=1920&q=80',
+        stars: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=1920&q=80'
+      };
+
+      if (currentBg === 'default' || !bgUrls[currentBg]) {
+        container.style.backgroundImage = 'linear-gradient(180deg, #FFFDF9 0%, #FAF6F0 50%, #F5EFE6 100%)';
+        overlay.style.opacity = '0';
+      } else {
+        container.style.backgroundImage = `url('${bgUrls[currentBg]}')`;
+        overlay.style.opacity = (1 - opacity).toString();
+      }
+    }
+
+    function setWebBg(bgType) {
+      currentBg = bgType;
+      saveToStorage();
+      applyWebBg();
+    }
+
+    function changeBgOpacity(val) {
+      currentBgOpacity = val;
+      saveToStorage();
+      applyWebBg();
+    }
+
+    function toggleBgModal() {
+      document.getElementById('bg-modal').classList.toggle('hidden');
     }
 
     // Đếm ngày yêu nhau
@@ -285,6 +490,7 @@
 
     setInterval(updateLoveCounter, 1000);
     updateLoveCounter();
+    applyWebBg();
 
     // Hiển thị danh sách kỷ niệm
     function renderMemories() {
@@ -310,8 +516,8 @@
       container.innerHTML = filtered.map(m => `
         <div class="polaroid-card rounded-2xl flex flex-col justify-between">
           <div>
-            <div class="rounded-xl overflow-hidden aspect-4/3 bg-beige mb-3">
-              <img src="${m.imageUrl}" alt="${m.caption}" class="w-full h-full object-cover">
+            <div class="rounded-xl overflow-hidden aspect-4/3 bg-beige mb-3 shadow-inner">
+              <img src="${m.imageUrl}" alt="${m.caption}" class="w-full h-full object-cover" loading="lazy">
             </div>
             <div class="flex items-center justify-between text-xs text-wood mb-2 font-medium">
               <span>📅 ${new Date(m.date).toLocaleDateString('vi-VN')}</span>
@@ -357,7 +563,38 @@
       modal.classList.toggle('hidden');
       if (!modal.classList.contains('hidden')) {
         document.getElementById('memory-date').value = new Date().toISOString().split('T')[0];
+        initSampleList();
       }
+    }
+
+    function initSampleList() {
+      const list = document.getElementById('sample-list');
+      list.innerHTML = SAMPLE_PHOTO_PRESETS.map(p => `
+        <div onclick="selectSamplePhoto('${p.url}')" class="cursor-pointer group rounded-lg overflow-hidden border border-wood/20 hover:border-rosePastel">
+          <img src="${p.url}" class="w-full h-12 object-cover">
+          <div class="text-[9px] text-center p-0.5 truncate bg-white">${p.name}</div>
+        </div>
+      `).join('');
+    }
+
+    function toggleSamplePhotos() {
+      document.getElementById('sample-picker').classList.toggle('hidden');
+    }
+
+    function selectSamplePhoto(url) {
+      currentImageBase64 = url;
+      document.getElementById('image-preview').src = url;
+      document.getElementById('preview-container').classList.remove('hidden');
+      document.getElementById('sample-picker').classList.add('hidden');
+    }
+
+    function generateSampleCaption() {
+      captionIndex = (captionIndex + 1) % SAMPLE_CAPTIONS.length;
+      document.getElementById('sample-caption-text').innerText = `"${SAMPLE_CAPTIONS[captionIndex]}"`;
+    }
+
+    function applySampleCaption() {
+      document.getElementById('memory-caption').value = SAMPLE_CAPTIONS[captionIndex];
     }
 
     function handleImageSelect(e) {

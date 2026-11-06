@@ -1,48 +1,36 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Image as ImageIcon, MapPin, Calendar, Heart, Sparkles, X, Check, Upload, Tag } from 'lucide-react';
+import {
+  Camera,
+  Image as ImageIcon,
+  MapPin,
+  Calendar,
+  Heart,
+  Sparkles,
+  X,
+  Check,
+  Tag,
+  Wand2,
+  RefreshCw,
+  Library,
+  ChevronRight,
+  Flame
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Memory, POPULAR_TAGS } from '../types';
+import { Memory, POPULAR_TAGS, SAMPLE_PHOTO_LIBRARY, CoupleInfo } from '../types';
 import { compressImageFile } from '../services/storage';
 
 interface QuickUploadFormProps {
   onAddMemory: (memory: Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>) => void;
   isOpen: boolean;
   onClose: () => void;
+  coupleInfo: CoupleInfo;
 }
-
-const SAMPLE_ROMANTIC_PHOTOS = [
-  {
-    name: "Quán Cà Phê Ấm",
-    url: "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=1000&q=80"
-  },
-  {
-    name: "Hoàng Hôn Êm Đềm",
-    url: "https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=1000&q=80"
-  },
-  {
-    name: "Hoa & Bầu Trời",
-    url: "https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=1000&q=80"
-  },
-  {
-    name: "Bàn Trà Chiều",
-    url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1000&q=80"
-  }
-];
-
-const SUGGESTED_LOCATIONS = [
-  "Đà Lạt thơ mộng",
-  "Tiệm cà phê góc phố",
-  "Bờ Hồ Tây lộng gió",
-  "Góc ban công nhỏ",
-  "Phố cổ Hội An",
-  "Chuyến đi biển",
-  "Căn bếp ấm cúng"
-];
 
 export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   onAddMemory,
   isOpen,
-  onClose
+  onClose,
+  coupleInfo
 }) => {
   const [imagePreview, setImagePreview] = useState<string>('');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -52,6 +40,21 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
+  // Trạng thái Kho ảnh mẫu mở rộng
+  const [showPhotoLibrary, setShowPhotoLibrary] = useState(false);
+  const [activeSampleCategory, setActiveSampleCategory] = useState<string>(
+    SAMPLE_PHOTO_LIBRARY[0].category
+  );
+
+  // Trạng thái Gemini AI Viết Caption
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [aiTone, setAiTone] = useState<'romantic' | 'cute' | 'peaceful' | 'funny' | 'poem'>(
+    'romantic'
+  );
+  const [aiKeywords, setAiKeywords] = useState('');
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [showAiPanel, setShowAiPanel] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -59,7 +62,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     if (!file) return;
 
     try {
-      const compressed = await compressImageFile(file);
+      const compressed = await compressImageFile(file, 1280, 0.85);
       setImagePreview(compressed);
     } catch (err) {
       console.error('Lỗi nén ảnh:', err);
@@ -81,12 +84,68 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith('image/')) {
       try {
-        const compressed = await compressImageFile(file);
+        const compressed = await compressImageFile(file, 1280, 0.85);
         setImagePreview(compressed);
       } catch (err) {
         console.error('Lỗi khi nén ảnh kéo thả:', err);
       }
     }
+  };
+
+  // Chọn ảnh từ Kho ảnh mẫu
+  const handleSelectSample = (url: string, suggestedLocation: string) => {
+    setImagePreview(url);
+    if (!location) {
+      setLocation(suggestedLocation);
+    }
+    setShowPhotoLibrary(false);
+  };
+
+  // Gọi Gemini AI để viết Caption
+  const handleGenerateAiCaption = async () => {
+    setIsAiGenerating(true);
+    try {
+      const response = await fetch('/api/generate-caption', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location: location.trim(),
+          tone: aiTone,
+          coupleNames: {
+            personOne: coupleInfo.personOne || 'Anh',
+            personTwo: coupleInfo.personTwo || 'Em'
+          },
+          keywords: aiKeywords.trim(),
+          imageBase64: imagePreview.startsWith('data:image') ? imagePreview : undefined
+        })
+      });
+
+      const data = await response.json();
+      if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+        setAiSuggestions(data.suggestions);
+      } else if (Array.isArray(data.fallback)) {
+        setAiSuggestions(data.fallback);
+      } else {
+        setAiSuggestions([
+          `Góc nhỏ bình yên nơi ${coupleInfo.personOne} và ${coupleInfo.personTwo} cùng nhau viết nên những ngày dịu dàng.`,
+          `Có những ngày nắng đẹp, nhưng đẹp nhất vẫn là nụ cười của người đối diện.`,
+          `Mong cho hai đứa mình mãi bình yên bên nhau qua từng năm tháng dài rộng.`
+        ]);
+      }
+    } catch (error) {
+      console.error('Lỗi khi gọi AI Gemini:', error);
+      setAiSuggestions([
+        `Nơi lưu giữ từng khoảnh khắc dịu dàng nhất của hai đứa mình.`,
+        `Cùng em đi qua mọi con đường, bình yên gom lại vừa vặn trong một góc nhỏ.`,
+        `Thế giới rộng lớn là thế, nhưng an lòng nhất vẫn là khi ở cạnh bên em.`
+      ]);
+    } finally {
+      setIsAiGenerating(false);
+    }
+  };
+
+  const handleApplyAiSuggestion = (suggestionText: string) => {
+    setCaption(suggestionText);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -96,7 +155,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       return;
     }
     if (!caption.trim()) {
-      alert('Hãy viết vài dòng cảm xúc hoặc ghi chú kỷ niệm nhé!');
+      alert('Hãy viết vài dòng cảm xúc hoặc bấm dùng Gemini AI để viết gợi ý nhé!');
       return;
     }
 
@@ -121,6 +180,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     setImagePreview('');
     setLocation('');
     setCaption('');
+    setAiSuggestions([]);
+    setShowAiPanel(false);
     setIsSubmitting(false);
     onClose();
   };
@@ -128,8 +189,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/45 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-[#FFFDF9] rounded-3xl p-5 sm:p-8 max-w-xl w-full border border-[#8C6D58]/20 shadow-2xl relative my-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-[#FFFDF9] rounded-3xl p-5 sm:p-7 max-w-2xl w-full border border-[#8C6D58]/20 shadow-2xl relative my-6">
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -138,32 +199,89 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        <div className="mb-5">
-          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#D98A76] bg-[#E8A598]/15 px-3 py-1 rounded-full mb-2">
+        <div className="mb-4">
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#D98A76] bg-[#E8A598]/15 px-3 py-1 rounded-full mb-1.5">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Thêm Khoảnh Khắc Mới</span>
           </div>
           <h2 className="font-serif-romantic text-2xl sm:text-3xl font-bold text-[#3D2E28]">
             Đăng Kỷ Niệm Của Hai Đứa
           </h2>
-          <p className="text-xs text-[#8C6D58] mt-1">
-            Lưu giữ từng ánh nhìn, nụ cười và hành trình bình yên bên nhau
+          <p className="text-xs text-[#8C6D58] mt-0.5">
+            Chọn ảnh từ máy hoặc kho ảnh mẫu ấm áp, kết nối Gemini AI để viết những dòng cảm xúc ngọt ngào
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Ô Chọn / Tải ảnh lên với Live Preview */}
           <div>
-            <label className="block text-xs font-semibold text-[#8C6D58] mb-1.5">
-              Hình ảnh kỷ niệm <span className="text-[#D98A76]">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-[#8C6D58]">
+                Hình ảnh kỷ niệm <span className="text-[#D98A76]">*</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setShowPhotoLibrary(!showPhotoLibrary)}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] bg-[#F9F6F0] hover:bg-[#E8A598]/20 px-2.5 py-1 rounded-full transition-all"
+              >
+                <Library className="w-3.5 h-3.5" />
+                <span>{showPhotoLibrary ? 'Đóng kho ảnh mẫu' : 'Mở kho ảnh mẫu (+20 ảnh)'}</span>
+              </button>
+            </div>
+
+            {/* Kho Ảnh Mẫu Mở Rộng */}
+            {showPhotoLibrary && (
+              <div className="bg-[#FAF6F0] rounded-2xl p-3 border border-[#8C6D58]/20 mb-3 space-y-2">
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
+                  {SAMPLE_PHOTO_LIBRARY.map((cat) => (
+                    <button
+                      key={cat.category}
+                      type="button"
+                      onClick={() => setActiveSampleCategory(cat.category)}
+                      className={`px-3 py-1 rounded-full whitespace-nowrap transition-all font-medium ${
+                        activeSampleCategory === cat.category
+                          ? 'bg-[#E8A598] text-white shadow-xs'
+                          : 'bg-white text-[#8C6D58] hover:text-[#3D2E28]'
+                      }`}
+                    >
+                      {cat.category}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 max-h-48 overflow-y-auto">
+                  {SAMPLE_PHOTO_LIBRARY.find((c) => c.category === activeSampleCategory)?.items.map(
+                    (item) => (
+                      <div
+                        key={item.title}
+                        onClick={() => handleSelectSample(item.url, item.suggestedLocation)}
+                        className="group relative rounded-xl overflow-hidden cursor-pointer aspect-4/3 border border-[#8C6D58]/15 hover:border-[#D98A76] shadow-xs"
+                      >
+                        <img
+                          src={item.url}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-1.5">
+                          <span className="text-[10px] text-white font-medium truncate">
+                            {item.title}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
 
             {imagePreview ? (
-              <div className="relative rounded-2xl overflow-hidden border-2 border-[#E8A598]/40 shadow-xs max-h-64 group bg-[#F9F6F0]">
+              <div className="relative rounded-2xl overflow-hidden border-2 border-[#E8A598]/40 shadow-xs max-h-60 group bg-[#F9F6F0]">
                 <img
                   src={imagePreview}
                   alt="Ảnh kỷ niệm xem trước"
-                  className="w-full h-56 sm:h-64 object-cover"
+                  className="w-full h-52 sm:h-60 object-cover"
                 />
                 <button
                   type="button"
@@ -173,9 +291,9 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 >
                   <X className="w-4 h-4" />
                 </button>
-                <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/50 text-white text-[11px] rounded-lg backdrop-blur-xs flex items-center gap-1">
+                <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/55 text-white text-[11px] rounded-lg backdrop-blur-xs flex items-center gap-1">
                   <Check className="w-3 h-3 text-[#E8A598]" />
-                  <span>Đã chọn ảnh</span>
+                  <span>Ảnh đã tối ưu cho web</span>
                 </div>
               </div>
             ) : (
@@ -184,7 +302,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+                className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all ${
                   isDragging
                     ? 'border-[#D98A76] bg-[#E8A598]/15 scale-[0.99]'
                     : 'border-[#8C6D58]/25 hover:border-[#E8A598] bg-white hover:bg-[#FAF6F0]'
@@ -197,34 +315,15 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                   onChange={handleFileChange}
                   className="hidden"
                 />
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[#E8A598]/15 flex items-center justify-center text-[#D98A76]">
-                  <Camera className="w-6 h-6" />
+                <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-[#E8A598]/15 flex items-center justify-center text-[#D98A76]">
+                  <Camera className="w-5 h-5" />
                 </div>
-                <p className="text-sm font-semibold text-[#3D2E28]">
-                  Bấm để chọn ảnh từ máy hoặc kéo thả vào đây
+                <p className="text-xs sm:text-sm font-semibold text-[#3D2E28]">
+                  Bấm để chọn ảnh từ điện thoại / máy tính hoặc kéo thả vào đây
                 </p>
-                <p className="text-[11px] text-[#8C6D58] mt-1">
-                  Hỗ trợ định dạng JPG, PNG, WEBP từ điện thoại và máy tính
+                <p className="text-[11px] text-[#8C6D58] mt-0.5">
+                  Tự động tối ưu dung lượng WebP/JPEG hiển thị mượt mà trên mọi thiết bị
                 </p>
-              </div>
-            )}
-
-            {/* Quick sample photos */}
-            {!imagePreview && (
-              <div className="mt-2.5">
-                <span className="text-[11px] text-[#8C6D58] block mb-1">Hoặc chọn nhanh ảnh mẫu:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {SAMPLE_ROMANTIC_PHOTOS.map((sample) => (
-                    <button
-                      key={sample.name}
-                      type="button"
-                      onClick={() => setImagePreview(sample.url)}
-                      className="text-[11px] px-2.5 py-1 rounded-full bg-[#F9F6F0] hover:bg-[#E8A598]/20 text-[#8C6D58] border border-[#8C6D58]/15 transition-all"
-                    >
-                      {sample.name}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
           </div>
@@ -242,7 +341,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                   required
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
+                  className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
                 />
               </div>
             </div>
@@ -256,9 +355,9 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 <select
                   value={selectedTag}
                   onChange={(e) => setSelectedTag(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden appearance-none"
+                  className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden appearance-none"
                 >
-                  {POPULAR_TAGS.filter(t => t !== "Tất cả").map((t) => (
+                  {POPULAR_TAGS.filter((t) => t !== 'Tất cả').map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
@@ -280,25 +379,121 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="Ví dụ: Tiệm cà phê nhỏ, Đà Lạt, chuyến đi biển..."
-                className="w-full pl-9 pr-3 py-2 text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
+                className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
               />
-            </div>
-            {/* Quick location chips */}
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {SUGGESTED_LOCATIONS.slice(0, 4).map((loc) => (
-                <button
-                  key={loc}
-                  type="button"
-                  onClick={() => setLocation(loc)}
-                  className="text-[10px] px-2 py-0.5 rounded-md bg-[#F9F6F0] hover:bg-[#E8A598]/20 text-[#8C6D58] transition-all"
-                >
-                  + {loc}
-                </button>
-              ))}
             </div>
           </div>
 
-          {/* Khung viết cảm xúc / nhật ký */}
+          {/* KHUNG AI GEMINI VIẾT CAPTION & NHẬT KÝ */}
+          <div className="bg-[#FAF6F0] rounded-2xl p-3.5 border border-[#8C6D58]/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-[#3D2E28]">
+                <Wand2 className="w-4 h-4 text-[#D98A76] animate-pulse" />
+                <span>AI Gemini Viết Caption Tình Yêu</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAiPanel(!showAiPanel)}
+                className="text-[11px] font-semibold text-[#D98A76] hover:underline"
+              >
+                {showAiPanel ? 'Thu gọn' : 'Mở bảng tùy chọn AI'}
+              </button>
+            </div>
+
+            {showAiPanel && (
+              <div className="space-y-2.5 pt-1 border-t border-[#8C6D58]/10 text-xs">
+                {/* Tone selection */}
+                <div>
+                  <span className="text-[11px] font-medium text-[#8C6D58] block mb-1">
+                    Phong cách cảm xúc:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: 'romantic', label: '💖 Lãng mạn sâu lắng' },
+                      { id: 'cute', label: '🌸 Dễ thương ngọt ngào' },
+                      { id: 'peaceful', label: '🍃 Nhẹ nhàng bình yên' },
+                      { id: 'funny', label: '😄 Trêu đùa dí dỏm' },
+                      { id: 'poem', label: '📜 Thơ tình ngắn' }
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setAiTone(t.id as any)}
+                        className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${
+                          aiTone === t.id
+                            ? 'bg-[#E8A598] text-white font-semibold shadow-xs'
+                            : 'bg-white text-[#8C6D58] hover:text-[#3D2E28] border border-[#8C6D58]/15'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Gợi ý chi tiết thêm */}
+                <div>
+                  <input
+                    type="text"
+                    value={aiKeywords}
+                    onChange={(e) => setAiKeywords(e.target.value)}
+                    placeholder="Gợi ý thêm cho AI (ví dụ: ngày mưa lạnh, em cười xinh, uống trà nóng...)"
+                    className="w-full px-3 py-1.5 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Nút kích hoạt AI */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isAiGenerating}
+                onClick={handleGenerateAiCaption}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#E8A598] to-[#D98A76] hover:opacity-95 text-white font-semibold text-xs shadow-xs transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isAiGenerating ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Gemini đang sáng tác...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Tạo gợi ý cảm xúc với Gemini AI</span>
+                  </>
+                )}
+              </button>
+              <span className="text-[11px] text-[#8C6D58]">
+                {imagePreview ? '✨ AI sẽ nhìn ảnh để viết' : '✨ Dựa theo ngữ cảnh'}
+              </span>
+            </div>
+
+            {/* Danh sách các câu caption được AI gợi ý */}
+            {aiSuggestions.length > 0 && (
+              <div className="space-y-1.5 pt-2">
+                <span className="text-[11px] font-semibold text-[#8C6D58] block">
+                  Chọn 1 câu bạn thích để điền vào nhật ký:
+                </span>
+                {aiSuggestions.map((sug, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => handleApplyAiSuggestion(sug)}
+                    className="p-2.5 rounded-xl bg-white hover:bg-[#FFFDF9] border border-[#8C6D58]/15 hover:border-[#E8A598] cursor-pointer transition-all flex items-start justify-between gap-2 group shadow-2xs"
+                  >
+                    <p className="font-handwriting text-lg sm:text-xl text-[#3D2E28] leading-tight">
+                      "{sug}"
+                    </p>
+                    <span className="text-[10px] font-semibold text-[#D98A76] group-hover:underline shrink-0 flex items-center gap-0.5 mt-1">
+                      Chọn câu này <ChevronRight className="w-3 h-3" />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Khung viết cảm xúc / nhật ký chính thức */}
           <div>
             <label className="block text-xs font-semibold text-[#8C6D58] mb-1">
               Dòng nhật ký / Cảm xúc của chúng mình <span className="text-[#D98A76]">*</span>
@@ -308,13 +503,13 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
               required
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder="Hôm ấy trời thật đẹp, và em cười thật xinh..."
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden resize-none font-sans"
+              placeholder="Viết cảm xúc của bạn hoặc bấm 'Tạo gợi ý với Gemini AI' ở trên nhé..."
+              className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden resize-none font-sans"
             />
           </div>
 
-          {/* Nút 'Lưu Kỷ Niệm' hiệu ứng mượt mà */}
-          <div className="flex items-center justify-end gap-3 pt-2">
+          {/* Nút 'Lưu Kỷ Niệm' */}
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#8C6D58]/10">
             <button
               type="button"
               onClick={onClose}

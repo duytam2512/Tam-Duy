@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
 
@@ -10,6 +10,7 @@ interface HeaderHeroProps {
   totalMemories: number;
   totalLikes: number;
   onOpenStandaloneModal: () => void;
+  onOpenBackgroundModal: () => void;
 }
 
 export const HeaderHero: React.FC<HeaderHeroProps> = ({
@@ -18,7 +19,8 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   onOpenQuickUpload,
   totalMemories,
   totalLikes,
-  onOpenStandaloneModal
+  onOpenStandaloneModal,
+  onOpenBackgroundModal
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<CoupleInfo>(coupleInfo);
@@ -56,8 +58,8 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
 
   const triggerLoveShower = () => {
     confetti({
-      particleCount: 70,
-      spread: 80,
+      particleCount: 75,
+      spread: 85,
       origin: { y: 0.6 },
       colors: ['#E8A598', '#E5989B', '#F9DCC4', '#D98A76', '#8C6D58'],
       shapes: ['circle', 'square']
@@ -74,25 +76,37 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   return (
     <header className="relative pt-6 pb-10 px-4 sm:px-6 max-w-5xl mx-auto">
       {/* Top action row */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-[#8C6D58] bg-[#F9F6F0] px-3.5 py-1.5 rounded-full border border-[#8C6D58]/15">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 mb-6">
+        <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-[#8C6D58] bg-[#FFFDF9]/90 backdrop-blur-xs px-3.5 py-1.5 rounded-full border border-[#8C6D58]/15 shadow-2xs">
           <Heart className="w-4 h-4 text-[#E8A598] fill-[#E8A598] animate-pulse" />
           <span>Kho Kỷ Niệm Dành Riêng Cho Hai Đứa</span>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Nút Đổi Hình Nền Web */}
+          <button
+            onClick={onOpenBackgroundModal}
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#8C6D58] hover:text-[#3D2E28] bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-[#8C6D58]/20 shadow-2xs transition-all"
+            title="Đổi hình nền trang web và tinh chỉnh độ mờ"
+          >
+            <Palette className="w-3.5 h-3.5 text-[#D98A76]" />
+            <span>Hình Nền Web</span>
+          </button>
+
+          {/* Nút Mã Nguồn 1 File */}
           <button
             onClick={onOpenStandaloneModal}
-            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#8C6D58] hover:text-[#3D2E28] bg-white hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-[#8C6D58]/20 shadow-xs transition-all"
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#8C6D58] hover:text-[#3D2E28] bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-[#8C6D58]/20 shadow-2xs transition-all"
             title="Xem mã nguồn HTML 1 file hoàn chỉnh để chạy độc lập"
           >
-            <FileCode className="w-4 h-4 text-[#D98A76]" />
+            <FileCode className="w-3.5 h-3.5 text-[#D98A76]" />
             <span className="hidden sm:inline">Mã nguồn</span> HTML 1 File
           </button>
 
+          {/* Nút Chỉnh Sửa Thông Tin Cặp Đôi */}
           <button
             onClick={() => setIsEditing(true)}
-            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#8C6D58] hover:text-[#3D2E28] bg-white hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-[#8C6D58]/20 shadow-xs transition-all"
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#8C6D58] hover:text-[#3D2E28] bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-[#8C6D58]/20 shadow-2xs transition-all"
             title="Đổi tên và ngày bắt đầu yêu"
           >
             <Edit3 className="w-3.5 h-3.5" />
