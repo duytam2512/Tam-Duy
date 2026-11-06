@@ -1,11 +1,12 @@
 import { MediaItem, SharedLink } from '../types';
 
 const STORAGE_KEYS = {
-  MEDIA_ITEMS: 'nhachungminh_media_v1',
+  MEDIA_ITEMS: 'nhachungminh_media_v2',
   SHARED_LINKS: 'nhachungminh_shared_links_v1',
   VAULT_MASTER_PIN: 'nhachungminh_master_pin_v1',
 };
 
+// Simplified to 2 meaningful albums matching: "Nhà chúng mình. Nơi bình yên của hai đứa"
 const DEFAULT_MEMORIES: MediaItem[] = [
   {
     id: 'memory-1',
@@ -15,7 +16,7 @@ const DEFAULT_MEMORIES: MediaItem[] = [
     thumbnailUrl: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80',
     source: 'upload',
     location: 'Cánh Đồng Mùa Gặt',
-    album: 'Những Buổi Sớm Quê',
+    album: 'Làng Quê Thanh Bình',
     ownerName: 'Chúng Mình',
     createdAt: Date.now() - 1000 * 60 * 60 * 2,
     updatedAt: Date.now() - 1000 * 60 * 60 * 2,
@@ -33,7 +34,7 @@ const DEFAULT_MEMORIES: MediaItem[] = [
     thumbnailUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=600&q=80',
     source: 'upload',
     location: 'Bến Sông Xưa',
-    album: 'Hoàng Hôn Làng Quê',
+    album: 'Làng Quê Thanh Bình',
     ownerName: 'Chúng Mình',
     createdAt: Date.now() - 1000 * 60 * 60 * 8,
     updatedAt: Date.now() - 1000 * 60 * 60 * 8,
@@ -43,7 +44,6 @@ const DEFAULT_MEMORIES: MediaItem[] = [
     isFavorite: true,
     notes: 'Ánh nắng chiều buông xuống mặt nước êm đềm, tiếng chuông chùa xa xa vọng lại thanh bình khôn xiết.',
   },
-
   {
     id: 'memory-4',
     title: 'Góc Sân Nắng Vàng & Vườn Rau Nhỏ Sau Nhà (Kỷ Niệm Riêng Tư)',
@@ -73,7 +73,7 @@ const DEFAULT_MEMORIES: MediaItem[] = [
     thumbnailUrl: 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=600&q=80',
     source: 'google_photo',
     location: 'Đầm Sen Hương Quê',
-    album: 'Mùa Hoa Nở',
+    album: 'Làng Quê Thanh Bình',
     ownerName: 'Google Photos',
     createdAt: Date.now() - 1000 * 60 * 60 * 36,
     updatedAt: Date.now() - 1000 * 60 * 60 * 36,
@@ -91,7 +91,7 @@ const DEFAULT_MEMORIES: MediaItem[] = [
     thumbnailUrl: 'https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=600&q=80',
     source: 'upload',
     location: 'Nhà Gỗ Đầu Làng',
-    album: 'Ký Ức Bình Dị',
+    album: 'Làng Quê Thanh Bình',
     ownerName: 'Chúng Mình',
     createdAt: Date.now() - 1000 * 60 * 60 * 48,
     updatedAt: Date.now() - 1000 * 60 * 60 * 48,
@@ -109,7 +109,7 @@ const DEFAULT_MEMORIES: MediaItem[] = [
     thumbnailUrl: 'https://images.unsplash.com/photo-1470240731273-7821a6eeb6bd?auto=format&fit=crop&w=1200&q=80',
     source: 'upload',
     location: 'Triền Đồi Xanh',
-    album: 'Hoàng Hôn Làng Quê',
+    album: 'Góc Nhỏ Của Hai Đứa',
     ownerName: 'Chúng Mình',
     createdAt: Date.now() - 1000 * 60 * 60 * 60,
     updatedAt: Date.now() - 1000 * 60 * 60 * 60,
@@ -146,10 +146,21 @@ export function getStoredMedia(): MediaItem[] {
       return DEFAULT_MEMORIES;
     }
     const parsed: MediaItem[] = JSON.parse(raw);
-    const cleaned = parsed.filter(item => item.id !== 'memory-3' && item.album !== 'Âm Thanh Bình Yên');
-    if (cleaned.length !== parsed.length) {
-      saveStoredMedia(cleaned);
-    }
+    // Clean and consolidate to the 2 main albums
+    const cleaned = parsed
+      .filter(item => item.id !== 'memory-3' && item.album !== 'Âm Thanh Bình Yên')
+      .map(item => {
+        // Consolidate older album names into the 2 core albums
+        if (!item.album || item.album === 'Những Buổi Sớm Quê' || item.album === 'Hoàng Hôn Làng Quê' || item.album === 'Mùa Hoa Nở' || item.album === 'Ký Ức Bình Dị') {
+          return {
+            ...item,
+            album: item.album === 'Góc Nhỏ Của Hai Đứa' ? 'Góc Nhỏ Của Hai Đứa' : 'Làng Quê Thanh Bình',
+          };
+        }
+        return item;
+      });
+
+    saveStoredMedia(cleaned);
     return cleaned;
   } catch {
     return DEFAULT_MEMORIES;

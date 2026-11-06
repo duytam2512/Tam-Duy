@@ -46,7 +46,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [url, setUrl] = useState('');
   const [singleTitle, setSingleTitle] = useState('');
   const [location, setLocation] = useState('Cánh Đồng Làng Quê');
-  const [album, setAlbum] = useState('Ký Ức Bình Dị');
+  const [album, setAlbum] = useState('Góc Nhỏ Của Hai Đứa');
   const [tagsInput, setTagsInput] = useState('làng quê, bình yên, kỷ niệm');
   const [notes, setNotes] = useState('');
 
@@ -407,11 +407,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                 onChange={e => setAlbum(e.target.value)}
                 className="w-full bg-[#081813] border border-emerald-800/60 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-pink-400"
               >
-                <option value="Những Buổi Sớm Quê">Những Buổi Sớm Quê</option>
-                <option value="Hoàng Hôn Làng Quê">Hoàng Hôn Làng Quê</option>
-                <option value="Mùa Hoa Nở">Mùa Hoa Nở</option>
                 <option value="Góc Nhỏ Của Hai Đứa">Góc Nhỏ Của Hai Đứa</option>
-                <option value="Ký Ức Bình Dị">Ký Ức Bình Dị</option>
+                <option value="Làng Quê Thanh Bình">Làng Quê Thanh Bình</option>
               </select>
             </div>
           </div>
