@@ -6,6 +6,7 @@ import { LightboxModal } from './components/LightboxModal';
 import { PolaroidShareModal } from './components/PolaroidShareModal';
 import { StandaloneModal } from './components/StandaloneModal';
 import { BackgroundSettingsModal } from './components/BackgroundSettingsModal';
+import { MusicPlayer } from './components/MusicPlayer';
 import { Memory, CoupleInfo, BackgroundSettings, DEFAULT_BG_SETTINGS } from './types';
 import {
   getStoredMemories,
@@ -259,6 +260,9 @@ export function App() {
         isOpen={isStandaloneOpen}
         onClose={() => setIsStandaloneOpen(false)}
       />
+
+      {/* Trình Phát Nhạc Nền Góc Nhỏ (Music Player) */}
+      <MusicPlayer />
     </div>
   );
 }

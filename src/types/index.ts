@@ -345,3 +345,57 @@ export const PRESET_BACKGROUNDS = [
     preview: "https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=300&q=70"
   }
 ];
+
+export interface MusicTrack {
+  id: string;
+  title: string;
+  artist: string;
+  mood: string;
+  url: string;
+}
+
+export const DEFAULT_PLAYLIST: MusicTrack[] = [
+  {
+    id: "track-1",
+    title: "Giai Điệu Acoustic Tình Yêu",
+    artist: "Acoustic Romantic",
+    mood: "Lãng mạn",
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+  },
+  {
+    id: "track-2",
+    title: "Chiều Mưa & Lofi Nhẹ Nhàng",
+    artist: "Lofi Peace",
+    mood: "Bình yên",
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
+  },
+  {
+    id: "track-3",
+    title: "Tiếng Mưa Rơi Êm Đềm",
+    artist: "Thiên Nhiên",
+    mood: "Thư giãn",
+    url: "https://actions.google.com/sounds/v1/weather/rain_heavy.ogg"
+  },
+  {
+    id: "track-4",
+    title: "Tiếng Sóng Biển Hoàng Hôn",
+    artist: "Biển Chiều",
+    mood: "Bình yên",
+    url: "https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg"
+  },
+  {
+    id: "track-5",
+    title: "Tiếng Chim Hót Rừng Thông",
+    artist: "Đà Lạt Sáng Sớm",
+    mood: "Tươi mới",
+    url: "https://actions.google.com/sounds/v1/ambiences/forest_birds.ogg"
+  },
+  {
+    id: "track-6",
+    title: "Khu Vườn Bình Yên",
+    artist: "Giai Điệu Gió",
+    mood: "Thư thái",
+    url: "https://actions.google.com/sounds/v1/ambiences/peaceful_outdoor.ogg"
+  }
+];
+

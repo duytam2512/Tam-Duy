@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
+import { BrandLogo } from './BrandLogo';
 
 interface HeaderHeroProps {
   coupleInfo: CoupleInfo;
@@ -75,11 +76,19 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
 
   return (
     <header className="relative pt-6 pb-10 px-4 sm:px-6 max-w-5xl mx-auto">
-      {/* Top action row */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 mb-6">
-        <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-[#8C6D58] bg-[#FFFDF9]/90 backdrop-blur-xs px-3.5 py-1.5 rounded-full border border-[#8C6D58]/15 shadow-2xs">
-          <Heart className="w-4 h-4 text-[#E8A598] fill-[#E8A598] animate-pulse" />
-          <span>Kho Kỷ Niệm Dành Riêng Cho Hai Đứa</span>
+      {/* Top action row / Navigation Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        {/* Logo trên thanh điều hướng cạnh chữ 'Góc Nhỏ Bình Yên' */}
+        <div className="flex items-center gap-2.5 bg-[#FFFDF9]/95 backdrop-blur-xs px-3.5 py-1.5 rounded-2xl border border-[#C87D55]/20 shadow-xs">
+          <BrandLogo size={32} className="w-8 h-8" />
+          <div className="flex flex-col">
+            <span className="font-serif-romantic font-bold text-sm sm:text-base text-[#3D2E28] leading-tight">
+              Góc Nhỏ Bình Yên
+            </span>
+            <span className="text-[10px] text-[#8C6D58]">
+              Nơi lưu giữ kỷ niệm
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -122,7 +131,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
         <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-[#F9DCC4]/30 rounded-full blur-3xl pointer-events-none" />
 
         {/* Couple Names */}
-        <div className="inline-flex items-center gap-3 mb-3 bg-[#FFFDF9]/90 px-5 py-1.5 rounded-full border border-[#E8A598]/30 shadow-xs">
+        <div className="inline-flex items-center gap-3 mb-4 bg-[#FFFDF9]/90 px-5 py-1.5 rounded-full border border-[#E8A598]/30 shadow-xs">
           <span className="font-serif-romantic text-lg sm:text-xl font-semibold text-[#3D2E28]">
             {coupleInfo.personOne}
           </span>
@@ -132,10 +141,13 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
           </span>
         </div>
 
-        {/* Title & Slogan */}
-        <h1 className="font-serif-romantic text-3xl sm:text-5xl font-bold tracking-tight text-[#3D2E28] mb-3">
-          Góc Nhỏ Bình Yên
-        </h1>
+        {/* Title & Slogan with Logo Icon */}
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <BrandLogo size={42} className="w-9 h-9 sm:w-11 sm:h-11" />
+          <h1 className="font-serif-romantic text-3xl sm:text-5xl font-bold tracking-tight text-[#3D2E28]">
+            Góc Nhỏ Bình Yên
+          </h1>
+        </div>
         <p className="font-handwriting text-xl sm:text-2xl text-[#8C6D58] max-w-xl mx-auto mb-6">
           "Nơi lưu giữ từng khoảnh khắc và kỷ niệm dịu dàng của hai đứa."
         </p>
