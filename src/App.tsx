@@ -8,6 +8,7 @@ import { StandaloneModal } from './components/StandaloneModal';
 import { BackgroundSettingsModal } from './components/BackgroundSettingsModal';
 import { MusicPlayer } from './components/MusicPlayer';
 import { ReadingModeView } from './components/ReadingModeView';
+import { SnowEffect } from './components/SnowEffect';
 import { Memory, CoupleInfo, BackgroundSettings, DEFAULT_BG_SETTINGS } from './types';
 import {
   getStoredMemories,
@@ -30,8 +31,27 @@ export function App() {
   const [isStandaloneOpen, setIsStandaloneOpen] = useState(false);
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
   const [isReadingModeOpen, setIsReadingModeOpen] = useState(false);
+  const [isSnowing, setIsSnowing] = useState(() => {
+    try {
+      return localStorage.getItem('goc_nho_snow') !== 'false';
+    } catch {
+      return true;
+    }
+  });
   const [selectedLightboxIndex, setSelectedLightboxIndex] = useState<number | null>(null);
   const [selectedShareMemory, setSelectedShareMemory] = useState<Memory | null>(null);
+
+  const handleToggleSnow = () => {
+    setIsSnowing((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('goc_nho_snow', String(next));
+      } catch (err) {
+        console.error('Lỗi lưu trạng thái tuyết rơi:', err);
+      }
+      return next;
+    });
+  };
 
   // Khởi tạo memories từ LocalStorage
   useEffect(() => {
@@ -138,6 +158,9 @@ export function App() {
         <div className="fixed inset-0 z-0 pointer-events-none bg-pastel-warm" />
       )}
 
+      {/* HIỆU ỨNG TUYẾT RƠI NHẸ NHÀNG, LÃNG MẠN PHỦ LÊN TOÀN MÀN HÌNH */}
+      <SnowEffect enabled={isSnowing} />
+
       {/* 2. NỘI DUNG CHÍNH (Z-INDEX NỔI TRÊN NỀN) */}
       <div className="relative z-10">
         {/* Phần Header / Hero & Đồng Hồ Đếm Ngày Yêu Nhau */}
@@ -150,6 +173,8 @@ export function App() {
           onOpenStandaloneModal={() => setIsStandaloneOpen(true)}
           onOpenBackgroundModal={() => setIsBackgroundModalOpen(true)}
           onOpenReadingMode={() => setIsReadingModeOpen(true)}
+          isSnowing={isSnowing}
+          onToggleSnow={handleToggleSnow}
         />
 
         {/* Bảng Kỷ Niệm (Masonry Grid & Dòng Thời Gian) */}

@@ -352,6 +352,11 @@ export interface MusicTrack {
   artist: string;
   mood: string;
   url: string;
+  thumbnail?: string;
+  duration?: number;
+  isZing?: boolean;
+  isYouTube?: boolean;
+  youtubeId?: string;
 }
 
 export const DEFAULT_PLAYLIST: MusicTrack[] = [

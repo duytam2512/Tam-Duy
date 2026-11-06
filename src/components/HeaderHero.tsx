@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen, Snowflake } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
 import { BrandLogo } from './BrandLogo';
@@ -13,6 +13,8 @@ interface HeaderHeroProps {
   onOpenStandaloneModal: () => void;
   onOpenBackgroundModal: () => void;
   onOpenReadingMode: () => void;
+  isSnowing: boolean;
+  onToggleSnow: () => void;
 }
 
 export const HeaderHero: React.FC<HeaderHeroProps> = ({
@@ -23,7 +25,9 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   totalLikes,
   onOpenStandaloneModal,
   onOpenBackgroundModal,
-  onOpenReadingMode
+  onOpenReadingMode,
+  isSnowing,
+  onToggleSnow
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<CoupleInfo>(coupleInfo);
@@ -102,6 +106,20 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
           >
             <BookOpen className="w-3.5 h-3.5" />
             <span>Chế Độ Đọc</span>
+          </button>
+
+          {/* Nút Bật/Tắt Tuyết Rơi Lãng Mạn */}
+          <button
+            onClick={onToggleSnow}
+            className={`flex items-center gap-1.5 text-xs sm:text-sm font-medium px-3 py-1.5 rounded-full border shadow-2xs transition-all ${
+              isSnowing
+                ? 'bg-[#E8A598]/20 text-[#D98A76] border-[#D98A76]/40 font-semibold'
+                : 'bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] text-[#8C6D58] border-[#8C6D58]/20'
+            }`}
+            title={isSnowing ? 'Đang bật tuyết rơi nhẹ nhàng (bấm để tắt)' : 'Bấm để bật tuyết rơi lãng mạn'}
+          >
+            <Snowflake className={`w-3.5 h-3.5 text-[#D98A76] ${isSnowing ? 'animate-spin [animation-duration:12s]' : ''}`} />
+            <span className="hidden sm:inline">{isSnowing ? 'Tuyết: Bật' : 'Tuyết'}</span>
           </button>
 
           {/* Nút Đổi Hình Nền Web */}

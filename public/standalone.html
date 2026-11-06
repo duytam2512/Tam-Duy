@@ -6,8 +6,9 @@
   <title>Góc Nhỏ Bình Yên • Nơi Lưu Giữ Kỷ Niệm Của Hai Đứa</title>
   <meta name="description" content="Album kỷ niệm tình yêu lãng mạn, đếm ngày yêu nhau, nhạc nền du dương, tùy chỉnh hình nền web và lưu giữ từng khoảnh khắc ngọt ngào của hai đứa.">
 
-  <!-- Favicon: Mái nhà & Trái tim (Góc Nhỏ Bình Yên) -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 28 C32 10, 8 26, 22 52 C34 74, 50 88, 50 88 C50 88, 66 74, 78 52 C92 26, 68 10, 50 28 Z' fill='none' stroke='%23C87D55' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/><path d='M35 56 L50 43 L65 56 V72 H35 Z' fill='%23FFFDF9' stroke='%23C87D55' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/><path d='M44 72 V60 H56 V72' fill='none' stroke='%23C87D55' stroke-width='4'/><path d='M58 45 V38 H64 V50' fill='none' stroke='%23C87D55' stroke-width='4'/></svg>" />
+  <!-- Favicon: Mái nhà & Trái tim (Logo Phương án 1 - Góc Nhỏ Bình Yên) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 26 C32 8, 8 24, 22 50 C34 72, 50 86, 50 86 C50 86, 66 72, 78 50 C92 24, 68 8, 50 26 Z' fill='none' stroke='%23C87D55' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/><path d='M35 54 L50 41 L65 54 V70 H35 Z' fill='%23FAF7F2' stroke='%23C87D55' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/><path d='M44 70 V58 H56 V70' fill='none' stroke='%23C87D55' stroke-width='4'/><path d='M58 43 V36 H64 V48' fill='none' stroke='%23C87D55' stroke-width='4'/></svg>" />
+  <link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 26 C32 8, 8 24, 22 50 C34 72, 50 86, 50 86 C50 86, 66 72, 78 50 C92 24, 68 8, 50 26 Z' fill='none' stroke='%23C87D55' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/><path d='M35 54 L50 41 L65 54 V70 H35 Z' fill='%23FAF7F2' stroke='%23C87D55' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/><path d='M44 70 V58 H56 V70' fill='none' stroke='%23C87D55' stroke-width='4'/><path d='M58 43 V36 H64 V48' fill='none' stroke='%23C87D55' stroke-width='4'/></svg>" />
 
   <!-- 1. Tailwind CSS qua CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -76,20 +77,23 @@
     <div id="custom-bg-overlay" class="absolute inset-0 bg-[#FFFDF9] transition-opacity duration-500"></div>
   </div>
 
+  <!-- HIỆU ỨNG TUYẾT RƠI NHẸ NHÀNG, LÃNG MẠN PHỦ LÊN TOÀN BỘ MÀN HÌNH -->
+  <canvas id="snow-canvas" class="fixed inset-0 pointer-events-none z-20"></canvas>
+
   <!-- NỘI DUNG CHÍNH (NỔI TRÊN NỀN) -->
   <div class="relative z-10">
 
     <!-- HEADER & NAVBAR VỚI LOGO MÁI NHÀ & TRÁI TIM -->
     <header class="pt-6 pb-6 px-4 max-w-5xl mx-auto">
-      {/* Top Navbar */}
+      <!-- Top Navbar -->
       <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-        {/* Logo trên thanh điều hướng cạnh dòng chữ 'Góc Nhỏ Bình Yên' (32x32px, tone #C87D55) */}
+        <!-- Logo trên thanh điều hướng cạnh dòng chữ 'Góc Nhỏ Bình Yên' (32x32px, tone #C87D55) -->
         <div class="flex items-center gap-2.5 bg-[#FFFDF9]/95 backdrop-blur-xs px-3.5 py-1.5 rounded-2xl border border-[#C87D55]/20 shadow-xs">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32" class="w-8 h-8 shrink-0">
-            <path d="M50 28 C32 10, 8 26, 22 52 C34 74, 50 88, 50 88 C50 88, 66 74, 78 52 C92 26, 68 10, 50 28 Z" fill="none" stroke="#C87D55" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M35 56 L50 43 L65 56 V72 H35 Z" fill="#FFFDF9" stroke="#C87D55" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M44 72 V60 H56 V72" fill="none" stroke="#C87D55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M58 45 V38 H64 V50" fill="none" stroke="#C87D55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M50 26 C32 8, 8 24, 22 50 C34 72, 50 86, 50 86 C50 86, 66 72, 78 50 C92 24, 68 8, 50 26 Z" fill="none" stroke="#C87D55" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M35 54 L50 41 L65 54 V70 H35 Z" fill="#FAF7F2" stroke="#C87D55" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M44 70 V58 H56 V70" fill="none" stroke="#C87D55" stroke-width="4"/>
+            <path d="M58 43 V36 H64 V48" fill="none" stroke="#C87D55" stroke-width="4"/>
           </svg>
           <div class="flex flex-col">
             <span class="font-serif font-bold text-sm sm:text-base text-espresso leading-tight">
@@ -103,14 +107,31 @@
 
         <!-- Các nút tiện ích trên header -->
         <div class="flex items-center gap-2">
+          <!-- Chế độ đọc -->
+          <button onclick="openReadingMode()" class="flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-roseDeep to-[#C87D55] hover:opacity-95 px-3.5 py-1.5 rounded-full shadow-xs transition-all active:scale-95" title="Chế độ đọc: Cùng nhau đọc lại nhật ký lãng mạn">
+            <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
+            <span>Chế Độ Đọc</span>
+          </button>
+
+          <!-- Bật/Tắt Tuyết rơi -->
+          <button id="snow-toggle-btn" onclick="toggleSnow()" class="flex items-center gap-1.5 text-xs font-semibold text-roseDeep bg-rosePastel/20 hover:bg-rosePastel/30 px-3 py-1.5 rounded-full border border-roseDeep/30 shadow-2xs transition-all" title="Bật/Tắt hiệu ứng tuyết rơi lãng mạn">
+            <i data-lucide="snowflake" class="w-3.5 h-3.5 animate-spin [animation-duration:12s]"></i>
+            <span id="snow-toggle-text">Tuyết: Bật</span>
+          </button>
+
+          <!-- Nhạc nền -->
           <button onclick="toggleMusicModal()" class="flex items-center gap-1.5 text-xs font-semibold text-roseDeep bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-wood/20 shadow-2xs transition-all">
             <i data-lucide="music" class="w-3.5 h-3.5"></i>
-            <span>Nhạc Nền</span>
+            <span class="hidden sm:inline">Nhạc Nền</span>
           </button>
+
+          <!-- Đổi nền -->
           <button onclick="toggleBgModal()" class="flex items-center gap-1.5 text-xs font-semibold text-wood bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-wood/20 shadow-2xs transition-all">
             <i data-lucide="palette" class="w-3.5 h-3.5 text-roseDeep"></i>
-            <span>Đổi Nền</span>
+            <span class="hidden sm:inline">Đổi Nền</span>
           </button>
+
+          <!-- Chỉnh sửa ngày yêu -->
           <button onclick="editLoveInfo()" class="flex items-center gap-1.5 text-xs font-semibold text-wood bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-wood/20 shadow-2xs transition-all">
             <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
             <span>Chỉnh sửa</span>
@@ -321,13 +342,82 @@
           <span>Giai Điệu Tình Yêu</span>
         </div>
         <h3 class="font-serif text-xl font-bold text-espresso mb-1">Chọn Giai Điệu Cho Góc Nhỏ</h3>
-        <p class="text-xs text-wood mb-4">Thay đổi bài hát nền theo tâm trạng của hai bạn</p>
+        <p class="text-xs text-wood mb-3">Thay đổi bài hát nền theo tâm trạng của hai bạn hoặc xóa bớt bài theo ý muốn</p>
 
-        <div class="space-y-2 mb-4" id="playlist-container">
+        <div class="space-y-2 mb-2 max-h-[40vh] overflow-y-auto pr-1" id="playlist-container">
           <!-- Sẽ render bằng JS -->
         </div>
 
-        <div class="pt-3 border-t border-wood/10 flex items-center justify-between">
+        <!-- Thanh thống kê & Khôi phục danh sách gốc -->
+        <div class="flex items-center justify-between text-[11px] text-wood px-1 py-1.5 border-t border-wood/10 mb-3">
+          <span id="playlist-count-text">Đang có 5 bài hát</span>
+          <button type="button" onclick="resetPlaylist()" class="flex items-center gap-1 text-roseDeep hover:text-espresso font-medium hover:underline transition-all" title="Khôi phục danh sách bài hát mặc định">
+            <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
+            <span>Khôi phục bài gốc</span>
+          </button>
+        </div>
+
+        <!-- Tab chuyển đổi: YouTube | Zing MP3 | Link MP3 -->
+        <div class="mt-3 pt-3 border-t border-wood/10">
+          <div class="flex items-center gap-1.5 mb-2">
+            <button type="button" onclick="setStandaloneMusicTab('youtube')" id="tab-btn-youtube" class="text-xs px-2.5 py-1 rounded-full font-semibold bg-red-600 text-white transition-all flex items-center gap-1">
+              <i data-lucide="youtube" class="w-3.5 h-3.5"></i>
+              <span>Nhạc YouTube</span>
+            </button>
+            <button type="button" onclick="setStandaloneMusicTab('zing')" id="tab-btn-zing" class="text-xs px-2.5 py-1 rounded-full font-medium bg-beige text-wood transition-all flex items-center gap-1">
+              <i data-lucide="download" class="w-3 h-3"></i>
+              <span>Zing MP3</span>
+            </button>
+          </div>
+
+          <!-- Section YouTube -->
+          <div id="section-youtube" class="bg-[#FAF7F2] p-3 rounded-2xl border border-red-200">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[11px] font-semibold text-espresso flex items-center gap-1">
+                <i data-lucide="youtube" class="w-3.5 h-3.5 text-red-600"></i>
+                <span>Dán link YouTube hoặc tên bài hát:</span>
+              </span>
+              <span class="text-[10px] text-red-600 font-medium">Hỗ trợ mọi video</span>
+            </div>
+            <div class="relative mb-2">
+              <input type="text" id="youtube-url-input" placeholder="Dán link (https://youtube.com/watch?v=...) hoặc tên bài hát..." class="w-full pl-8 pr-24 py-1.5 text-xs rounded-xl bg-white border border-wood/20 focus:border-red-500 focus:outline-hidden">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-wood absolute left-2.5 top-2.5"></i>
+              <button onclick="addYouTubeSongStandalone()" id="youtube-add-btn" class="absolute right-1 top-1 bottom-1 px-3 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition-all">
+                <i data-lucide="youtube" class="w-3 h-3"></i>
+                <span>Thêm</span>
+              </button>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[10px] text-wood">Gợi ý:</span>
+              <button type="button" onclick="setYouTubeStandalone('Nàng Thơ - Hoàng Dũng')" class="text-[10px] px-2 py-0.5 rounded-full bg-white hover:bg-red-50 text-red-600 border border-red-200">Nàng Thơ</button>
+              <button type="button" onclick="setYouTubeStandalone('Ngày Đầu Tiên - Đức Phúc')" class="text-[10px] px-2 py-0.5 rounded-full bg-white hover:bg-red-50 text-red-600 border border-red-200">Ngày Đầu Tiên</button>
+              <button type="button" onclick="setYouTubeStandalone('Ánh Nắng Của Anh')" class="text-[10px] px-2 py-0.5 rounded-full bg-white hover:bg-red-50 text-red-600 border border-red-200">Ánh Nắng Của Anh</button>
+            </div>
+          </div>
+
+          <!-- Section Zing MP3 -->
+          <div id="section-zing" class="hidden bg-[#FAF7F2] p-3 rounded-2xl border border-roseDeep/20">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[11px] font-semibold text-espresso">Tải nhạc từ Zing MP3 thành bài của tôi:</span>
+              <span class="text-[10px] text-wood">Tự động tải về</span>
+            </div>
+            <div class="relative mb-2">
+              <input type="text" id="zing-url-input" placeholder="Dán link Zing MP3 hoặc tên bài hát..." class="w-full pl-8 pr-20 py-1.5 text-xs rounded-xl bg-white border border-wood/20 focus:border-roseDeep focus:outline-hidden">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-wood absolute left-2.5 top-2.5"></i>
+              <button onclick="downloadZingSongStandalone()" id="zing-download-btn" class="absolute right-1 top-1 bottom-1 px-3 bg-roseDeep hover:bg-[#C87D55] text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition-all">
+                <i data-lucide="download" class="w-3 h-3"></i>
+                <span>Tải Về</span>
+              </button>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[10px] text-wood">Gợi ý:</span>
+              <button type="button" onclick="setZingStandalone('Nàng Thơ - Hoàng Dũng')" class="text-[10px] px-2 py-0.5 rounded-full bg-white hover:bg-[#F9F6F0] text-roseDeep border border-roseDeep/20">Nàng Thơ</button>
+              <button type="button" onclick="setZingStandalone('Chỉ Là Không Cùng Nhau')" class="text-[10px] px-2 py-0.5 rounded-full bg-white hover:bg-[#F9F6F0] text-roseDeep border border-roseDeep/20">Chỉ Là Không Cùng Nhau</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-wood/10 flex items-center justify-between mt-3">
           <span class="text-xs text-wood">Âm lượng</span>
           <input type="range" min="0" max="1" step="0.05" value="0.65" oninput="changeVolume(this.value)" class="w-36 accent-rosePastel">
         </div>
@@ -382,8 +472,8 @@
 
   <!-- JAVASCRIPT XỬ LÝ LƯU TRỮ, NHẠC VÀ GIAO DIỆN -->
   <script>
-    // Danh sách bài hát có thể thay đổi theo lựa chọn
-    const PLAYLIST = [
+    // Danh sách bài hát mặc định
+    const DEFAULT_PLAYLIST = [
       {
         id: "1",
         title: "Giai Điệu Acoustic Tình Yêu",
@@ -421,11 +511,22 @@
       }
     ];
 
+    let PLAYLIST = (() => {
+      try {
+        const stored = localStorage.getItem('goc_nho_playlist');
+        return stored ? JSON.parse(stored) : [...DEFAULT_PLAYLIST];
+      } catch {
+        return [...DEFAULT_PLAYLIST];
+      }
+    })();
+
     let currentTrackIdx = 0;
     let isMusicPlaying = false;
     const audioElement = document.getElementById('bg-audio');
 
     function updateTrackUI() {
+      if (!PLAYLIST.length) return;
+      if (currentTrackIdx >= PLAYLIST.length) currentTrackIdx = 0;
       const track = PLAYLIST[currentTrackIdx];
       audioElement.src = track.url;
       document.getElementById('current-song-title').innerText = track.title;
@@ -463,6 +564,49 @@
       lucide.createIcons();
     }
 
+    function deleteTrack(idx, e) {
+      if (e) e.stopPropagation();
+      if (PLAYLIST.length <= 1) {
+        return;
+      }
+
+      PLAYLIST.splice(idx, 1);
+      try {
+        localStorage.setItem('goc_nho_playlist', JSON.stringify(PLAYLIST));
+      } catch (err) {
+        console.error('Lỗi lưu playlist:', err);
+      }
+
+      if (idx === currentTrackIdx) {
+        currentTrackIdx = idx >= PLAYLIST.length ? 0 : idx;
+        audioElement.src = PLAYLIST[currentTrackIdx].url;
+        if (isMusicPlaying) {
+          audioElement.play().catch(() => { isMusicPlaying = false; });
+        }
+      } else if (idx < currentTrackIdx) {
+        currentTrackIdx--;
+      }
+
+      updateTrackUI();
+      lucide.createIcons();
+    }
+
+    function resetPlaylist() {
+      PLAYLIST = [...DEFAULT_PLAYLIST];
+      try {
+        localStorage.setItem('goc_nho_playlist', JSON.stringify(PLAYLIST));
+      } catch (err) {
+        console.error('Lỗi khôi phục playlist:', err);
+      }
+
+      currentTrackIdx = 0;
+      updateTrackUI();
+      if (isMusicPlaying) {
+        audioElement.play().catch(() => { isMusicPlaying = false; });
+      }
+      lucide.createIcons();
+    }
+
     function toggleMusicModal() {
       document.getElementById('music-modal').classList.toggle('hidden');
     }
@@ -473,21 +617,177 @@
 
     function renderPlaylistModal() {
       const container = document.getElementById('playlist-container');
+      const countEl = document.getElementById('playlist-count-text');
+      if (countEl) countEl.innerText = `Đang có ${PLAYLIST.length} bài hát`;
+
       container.innerHTML = PLAYLIST.map((t, idx) => `
         <div onclick="selectTrack(${idx})" class="p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
           idx === currentTrackIdx ? 'bg-rosePastel/15 border-roseDeep shadow-xs' : 'bg-white hover:bg-beige border-wood/15'
         }">
-          <div class="flex items-center gap-2">
-            <i data-lucide="${idx === currentTrackIdx && isMusicPlaying ? 'pause' : 'play'}" class="w-4 h-4 text-roseDeep"></i>
-            <div>
-              <div class="text-xs font-semibold text-espresso">${t.title}</div>
-              <div class="text-[10px] text-wood">${t.artist}</div>
+          <div class="flex items-center gap-2 min-w-0 flex-1 mr-2">
+            <i data-lucide="${idx === currentTrackIdx && isMusicPlaying ? 'pause' : 'play'}" class="w-4 h-4 text-roseDeep shrink-0"></i>
+            <div class="min-w-0">
+              <div class="text-xs font-semibold text-espresso truncate">${t.title}</div>
+              <div class="text-[10px] text-wood truncate">${t.artist}</div>
             </div>
           </div>
-          <span class="text-[10px] px-2 py-0.5 rounded-full bg-white text-roseDeep border border-wood/10">${t.mood}</span>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-white text-roseDeep border border-wood/10 hidden sm:inline">${t.mood}</span>
+            <button type="button" onclick="deleteTrack(${idx}, event)" class="p-1 rounded-lg text-wood/50 hover:text-rose-600 hover:bg-rose-50 transition-colors" title="Xóa bài hát này">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
         </div>
       `).join('');
       lucide.createIcons();
+    }
+
+    function setStandaloneMusicTab(tab) {
+      const ytSec = document.getElementById('section-youtube');
+      const zingSec = document.getElementById('section-zing');
+      const ytBtn = document.getElementById('tab-btn-youtube');
+      const zingBtn = document.getElementById('tab-btn-zing');
+
+      if (tab === 'youtube') {
+        ytSec.classList.remove('hidden');
+        zingSec.classList.add('hidden');
+        ytBtn.className = 'text-xs px-2.5 py-1 rounded-full font-semibold bg-red-600 text-white transition-all flex items-center gap-1';
+        zingBtn.className = 'text-xs px-2.5 py-1 rounded-full font-medium bg-beige text-wood transition-all flex items-center gap-1';
+      } else {
+        ytSec.classList.add('hidden');
+        zingSec.classList.remove('hidden');
+        ytBtn.className = 'text-xs px-2.5 py-1 rounded-full font-medium bg-beige text-wood transition-all flex items-center gap-1';
+        zingBtn.className = 'text-xs px-2.5 py-1 rounded-full font-semibold bg-[#D98A76] text-white transition-all flex items-center gap-1';
+      }
+      lucide.createIcons();
+    }
+
+    function setYouTubeStandalone(val) {
+      document.getElementById('youtube-url-input').value = val;
+    }
+
+    async function addYouTubeSongStandalone() {
+      const input = document.getElementById('youtube-url-input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      const btn = document.getElementById('youtube-add-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i><span>Đang tìm...</span>';
+      lucide.createIcons();
+
+      try {
+        const res = await fetch('/api/youtube/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: val })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || 'Không thể tìm thấy video YouTube');
+        }
+
+        const newTrack = {
+          id: data.song.id,
+          title: data.song.title,
+          artist: data.song.artist,
+          mood: 'YouTube Music',
+          url: data.song.url,
+          isYouTube: true,
+          youtubeId: data.song.youtubeId,
+          thumbnail: data.song.thumbnail
+        };
+
+        const existingIdx = PLAYLIST.findIndex(t => t.id === newTrack.id);
+        if (existingIdx !== -1) {
+          PLAYLIST[existingIdx] = newTrack;
+          currentTrackIdx = existingIdx;
+        } else {
+          PLAYLIST.push(newTrack);
+          currentTrackIdx = PLAYLIST.length - 1;
+        }
+
+        try {
+          localStorage.setItem('goc_nho_playlist', JSON.stringify(PLAYLIST));
+        } catch (e) {
+          console.error(e);
+        }
+
+        updateTrackUI();
+        input.value = '';
+        alert(`Đã thêm thành công "${newTrack.title}" từ YouTube vào danh sách nhạc!`);
+      } catch (err) {
+        alert(err.message || 'Không thể thêm nhạc từ YouTube. Bạn kiểm tra lại link nhé!');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="youtube" class="w-3 h-3"></i><span>Thêm</span>';
+        lucide.createIcons();
+      }
+    }
+
+    function setZingStandalone(val) {
+      document.getElementById('zing-url-input').value = val;
+    }
+
+    async function downloadZingSongStandalone() {
+      const input = document.getElementById('zing-url-input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      const btn = document.getElementById('zing-download-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i><span>Đang tải...</span>';
+      lucide.createIcons();
+
+      try {
+        const res = await fetch('/api/zingmp3/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: val })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || 'Không thể tải bài hát từ Zing MP3');
+        }
+
+        const newTrack = {
+          id: data.song.id,
+          title: data.song.title,
+          artist: data.song.artist,
+          mood: 'Bài của tôi (Zing MP3)',
+          url: data.song.url
+        };
+
+        const existingIdx = PLAYLIST.findIndex(t => t.id === newTrack.id);
+        if (existingIdx !== -1) {
+          PLAYLIST[existingIdx] = newTrack;
+          currentTrackIdx = existingIdx;
+        } else {
+          PLAYLIST.push(newTrack);
+          currentTrackIdx = PLAYLIST.length - 1;
+        }
+
+        try {
+          localStorage.setItem('goc_nho_playlist', JSON.stringify(PLAYLIST));
+        } catch (e) {
+          console.error(e);
+        }
+
+        updateTrackUI();
+        input.value = '';
+        audioElement.play().then(() => {
+          isMusicPlaying = true;
+          document.getElementById('music-disc').classList.add('animate-spin');
+          document.getElementById('music-play-btn').innerHTML = '<i data-lucide="pause" class="w-3.5 h-3.5 fill-white"></i>';
+        });
+        alert(`Đã tải thành công "${newTrack.title}" - ${newTrack.artist} về bài của tôi!`);
+      } catch (err) {
+        alert(err.message || 'Không thể tải nhạc từ Zing MP3. Bạn kiểm tra lại link nhé!');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="download" class="w-3 h-3"></i><span>Tải Về</span>';
+        lucide.createIcons();
+      }
     }
 
     // 12 Kỷ niệm mẫu ban đầu phong phú, ấm áp
@@ -848,8 +1148,195 @@
       renderMemories();
     }
 
-    lucide.createIcons();
-    renderMemories();
+    /* ==========================================================
+       HIỆU ỨNG TUYẾT RƠI NHẸ NHÀNG, LÃNG MẠN (SNOWFALL SCRIPT)
+       ========================================================== */
+    let snowEnabled = localStorage.getItem('goc_nho_snow') !== 'false';
+    const snowCanvas = document.getElementById('snow-canvas');
+    const snowCtx = snowCanvas.getContext('2d');
+    let snowAnimId = null;
+    let snowflakes = [];
+    let snowAngle = 0;
+
+    function initSnow() {
+      if (!snowCanvas || !snowCtx) return;
+      const width = snowCanvas.width = window.innerWidth;
+      const height = snowCanvas.height = window.innerHeight;
+      const count = Math.min(Math.floor(width / 22), 65);
+      snowflakes = [];
+      for (let i = 0; i < count; i++) {
+        snowflakes.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          radius: Math.random() * 2.8 + 1,
+          speed: Math.random() * 0.8 + 0.4,
+          wind: Math.random() * 0.6 - 0.3,
+          alpha: Math.random() * 0.55 + 0.35,
+          swayOffset: Math.random() * Math.PI * 2
+        });
+      }
+    }
+
+    function drawSnow() {
+      if (!snowEnabled) {
+        snowCtx.clearRect(0, 0, snowCanvas.width, snowCanvas.height);
+        return;
+      }
+      const width = snowCanvas.width;
+      const height = snowCanvas.height;
+      snowCtx.clearRect(0, 0, width, height);
+      snowAngle += 0.01;
+
+      for (let i = 0; i < snowflakes.length; i++) {
+        const flake = snowflakes[i];
+        flake.y += flake.speed;
+        flake.x += Math.sin(snowAngle + flake.swayOffset) * 0.6 + flake.wind;
+
+        if (flake.y > height) {
+          flake.y = -10;
+          flake.x = Math.random() * width;
+        }
+        if (flake.x > width + 10) flake.x = -10;
+        else if (flake.x < -10) flake.x = width + 10;
+
+        snowCtx.beginPath();
+        snowCtx.arc(flake.x, flake.y, flake.radius, 0, Math.PI * 2, false);
+        const grad = snowCtx.createRadialGradient(flake.x, flake.y, 0, flake.x, flake.y, flake.radius);
+        grad.addColorStop(0, `rgba(255, 253, 249, ${flake.alpha})`);
+        grad.addColorStop(0.7, `rgba(255, 245, 240, ${flake.alpha * 0.7})`);
+        grad.addColorStop(1, 'rgba(232, 165, 152, 0)');
+        snowCtx.fillStyle = grad;
+        snowCtx.fill();
+      }
+
+      snowAnimId = requestAnimationFrame(drawSnow);
+    }
+
+    function toggleSnow() {
+      snowEnabled = !snowEnabled;
+      localStorage.setItem('goc_nho_snow', String(snowEnabled));
+      const btn = document.getElementById('snow-toggle-btn');
+      const text = document.getElementById('snow-toggle-text');
+      if (snowEnabled) {
+        btn.className = 'flex items-center gap-1.5 text-xs font-semibold text-roseDeep bg-rosePastel/20 hover:bg-rosePastel/30 px-3 py-1.5 rounded-full border border-roseDeep/30 shadow-2xs transition-all';
+        text.innerText = 'Tuyết: Bật';
+        cancelAnimationFrame(snowAnimId);
+        drawSnow();
+      } else {
+        btn.className = 'flex items-center gap-1.5 text-xs font-semibold text-wood bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-wood/20 shadow-2xs transition-all';
+        text.innerText = 'Tuyết: Tắt';
+        snowCtx.clearRect(0, 0, snowCanvas.width, snowCanvas.height);
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      if (snowCanvas) {
+        snowCanvas.width = window.innerWidth;
+        snowCanvas.height = window.innerHeight;
+      }
+    });
+
+    /* ==========================================================
+       CHẾ ĐỘ ĐỌC KỶ NIỆM (READING MODE SCRIPT)
+       ========================================================== */
+    let readingIndex = 0;
+    function openReadingMode() {
+      readingIndex = 0;
+      updateReadingView();
+      document.getElementById('reading-mode-modal').classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      lucide.createIcons();
+    }
+
+    function closeReadingMode() {
+      document.getElementById('reading-mode-modal').classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+
+    function prevReadingPage() {
+      if (readingIndex > 0) {
+        readingIndex--;
+        updateReadingView();
+      }
+    }
+
+    function nextReadingPage() {
+      if (readingIndex < memories.length - 1) {
+        readingIndex++;
+        updateReadingView();
+      }
+    }
+
+    function updateReadingView() {
+      const mem = memories[readingIndex];
+      if (!mem) return;
+      document.getElementById('reading-img').src = mem.imageUrl;
+      document.getElementById('reading-date').innerText = mem.date;
+      document.getElementById('reading-location').innerText = mem.location || 'Một nơi bình yên';
+      document.getElementById('reading-caption').innerText = mem.caption || 'Khoảnh khắc dịu dàng không lời...';
+      document.getElementById('reading-counter').innerText = `Trang ${readingIndex + 1} / ${memories.length}`;
+      document.getElementById('reading-prev-btn').disabled = readingIndex === 0;
+      document.getElementById('reading-next-btn').disabled = readingIndex === memories.length - 1;
+    }
+
+    // Khởi tạo
+    window.addEventListener('DOMContentLoaded', () => {
+      initSnow();
+      if (snowEnabled) drawSnow();
+      lucide.createIcons();
+      renderMemories();
+    });
   </script>
+
+  <!-- MODAL CHẾ ĐỘ ĐỌC (READING MODE MODAL) -->
+  <div id="reading-mode-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1E1715]/80 backdrop-blur-md">
+    <div class="relative w-full max-w-2xl bg-[#FFFDF9] rounded-3xl p-6 sm:p-10 shadow-2xl border border-wood/20 flex flex-col max-h-[90vh] overflow-y-auto">
+      <!-- Nút thoát -->
+      <div class="flex items-center justify-between pb-4 border-b border-wood/10 mb-4">
+        <div class="flex items-center gap-2 text-roseDeep font-serif font-bold text-sm">
+          <i data-lucide="book-open" class="w-4 h-4"></i>
+          <span>Nhật Ký Tình Yêu • Góc Nhỏ Bình Yên</span>
+        </div>
+        <button onclick="closeReadingMode()" class="p-1.5 text-wood hover:text-espresso hover:bg-beige rounded-full transition-all" title="Thoát chế độ đọc">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Khung ảnh trang nhật ký -->
+      <div class="relative rounded-2xl overflow-hidden bg-black/5 shadow-inner mb-6 aspect-4/3 sm:aspect-16/10">
+        <img id="reading-img" src="" alt="Kỷ niệm" class="w-full h-full object-cover">
+      </div>
+
+      <!-- Thông tin ngày & địa điểm -->
+      <div class="flex items-center justify-between text-xs text-wood mb-3">
+        <div class="flex items-center gap-1.5">
+          <i data-lucide="calendar" class="w-3.5 h-3.5 text-rosePastel"></i>
+          <span id="reading-date"></span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <i data-lucide="map-pin" class="w-3.5 h-3.5 text-rosePastel"></i>
+          <span id="reading-location"></span>
+        </div>
+      </div>
+
+      <!-- Dòng nhật ký cảm xúc -->
+      <div class="bg-[#F9F6F0] rounded-2xl p-5 border border-wood/10 mb-6">
+        <p id="reading-caption" class="font-handwriting text-xl sm:text-2xl text-espresso leading-relaxed whitespace-pre-wrap italic"></p>
+      </div>
+
+      <!-- Thanh điều hướng lật trang -->
+      <div class="flex items-center justify-between pt-2">
+        <button id="reading-prev-btn" onclick="prevReadingPage()" class="flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-full border border-wood/20 text-wood hover:bg-beige disabled:opacity-30 disabled:pointer-events-none transition-all">
+          <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          <span>Trang trước</span>
+        </button>
+        <span id="reading-counter" class="text-xs font-serif text-wood font-medium"></span>
+        <button id="reading-next-btn" onclick="nextReadingPage()" class="flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-full bg-roseDeep text-white hover:opacity-90 disabled:opacity-30 disabled:pointer-events-none transition-all">
+          <span>Trang sau</span>
+          <i data-lucide="chevron-right" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
