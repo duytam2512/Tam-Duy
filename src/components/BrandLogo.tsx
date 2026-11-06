@@ -17,17 +17,17 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ className = "w-8 h-8", siz
     >
       {/* 1. Trái tim bao bọc bên ngoài */}
       <path
-        d="M50 28 C32 10, 8 26, 22 52 C34 74, 50 88, 50 88 C50 88, 66 74, 78 52 C92 26, 68 10, 50 28 Z"
+        d="M50 26 C32 8, 8 24, 22 50 C34 72, 50 86, 50 86 C50 86, 66 72, 78 50 C92 24, 68 8, 50 26 Z"
         fill="none"
         stroke="#C87D55"
-        strokeWidth="5"
+        strokeWidth="6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       {/* 2. Mái nhà ấm cúng bên trong */}
       <path
-        d="M35 56 L50 43 L65 56 V72 H35 Z"
-        fill="#FFFDF9"
+        d="M35 54 L50 41 L65 54 V70 H35 Z"
+        fill="#FAF7F2"
         stroke="#C87D55"
         strokeWidth="5"
         strokeLinecap="round"
@@ -35,7 +35,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ className = "w-8 h-8", siz
       />
       {/* 3. Cánh cửa nhỏ bình yên */}
       <path
-        d="M44 72 V60 H56 V72"
+        d="M44 70 V58 H56 V70"
         fill="none"
         stroke="#C87D55"
         strokeWidth="4"
@@ -44,7 +44,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ className = "w-8 h-8", siz
       />
       {/* 4. Ống khói gia đình */}
       <path
-        d="M58 45 V38 H64 V50"
+        d="M58 43 V36 H64 V48"
         fill="none"
         stroke="#C87D55"
         strokeWidth="4"

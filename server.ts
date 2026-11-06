@@ -122,6 +122,63 @@ Chỉ trả về định dạng JSON thuần túy (không markdown thừa):
   }
 });
 
+/**
+ * API: /api/generate-music
+ * Tạo bản nhạc nền tình yêu ngắn (Lyria Clip 30s) bằng lyria-3-clip-preview
+ */
+app.post("/api/generate-music", async (req, res) => {
+  try {
+    const { prompt = "A gentle acoustic love ballad with warm guitar, soft piano, and a peaceful romantic melody for lovers" } = req.body;
+
+    const response = await ai.models.generateContentStream({
+      model: "lyria-3-clip-preview",
+      contents: prompt,
+    });
+
+    const audioChunks: Buffer[] = [];
+    let lyrics = "";
+    let mimeType = "audio/mpeg";
+
+    for await (const chunk of response) {
+      const parts = chunk.candidates?.[0]?.content?.parts;
+      if (!parts) continue;
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          if (audioChunks.length === 0 && part.inlineData.mimeType) {
+            mimeType = part.inlineData.mimeType;
+          }
+          audioChunks.push(Buffer.from(part.inlineData.data, "base64"));
+        }
+        if (part.text) {
+          lyrics += part.text;
+        }
+      }
+    }
+
+    if (audioChunks.length === 0) {
+      return res.status(500).json({
+        success: false,
+        message: "Không nhận được dữ liệu âm thanh từ Lyria",
+      });
+    }
+
+    const audioBase64 = Buffer.concat(audioChunks).toString("base64");
+    const audioDataUrl = `data:${mimeType};base64,${audioBase64}`;
+
+    return res.json({
+      success: true,
+      audioUrl: audioDataUrl,
+      lyrics,
+    });
+  } catch (error: any) {
+    console.error("Lỗi Lyria Music API:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Không thể tạo bản nhạc vào lúc này",
+    });
+  }
+});
+
 async function startServer() {
   const isDev = process.env.NODE_ENV !== "production";
 

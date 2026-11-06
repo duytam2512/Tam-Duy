@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
 import { BrandLogo } from './BrandLogo';
@@ -12,6 +12,7 @@ interface HeaderHeroProps {
   totalLikes: number;
   onOpenStandaloneModal: () => void;
   onOpenBackgroundModal: () => void;
+  onOpenReadingMode: () => void;
 }
 
 export const HeaderHero: React.FC<HeaderHeroProps> = ({
@@ -21,7 +22,8 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   totalMemories,
   totalLikes,
   onOpenStandaloneModal,
-  onOpenBackgroundModal
+  onOpenBackgroundModal,
+  onOpenReadingMode
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<CoupleInfo>(coupleInfo);
@@ -78,7 +80,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
     <header className="relative pt-6 pb-10 px-4 sm:px-6 max-w-5xl mx-auto">
       {/* Top action row / Navigation Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        {/* Logo trên thanh điều hướng cạnh chữ 'Góc Nhỏ Bình Yên' */}
+        {/* Logo trên thanh điều hướng cạnh chữ 'Góc Nhỏ Bình Yên' (32x32px, tone #C87D55) */}
         <div className="flex items-center gap-2.5 bg-[#FFFDF9]/95 backdrop-blur-xs px-3.5 py-1.5 rounded-2xl border border-[#C87D55]/20 shadow-xs">
           <BrandLogo size={32} className="w-8 h-8" />
           <div className="flex flex-col">
@@ -92,6 +94,16 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Nút Bật Chế Độ Đọc Kỷ Niệm */}
+          <button
+            onClick={onOpenReadingMode}
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-[#D98A76] to-[#C87D55] hover:opacity-95 px-3.5 py-1.5 rounded-full shadow-xs transition-all active:scale-95"
+            title="Bật Chế độ đọc: Ẩn các nút chức năng, cùng nhau đọc lại nhật ký lãng mạn"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>Chế Độ Đọc</span>
+          </button>
+
           {/* Nút Đổi Hình Nền Web */}
           <button
             onClick={onOpenBackgroundModal}
@@ -99,7 +111,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
             title="Đổi hình nền trang web và tinh chỉnh độ mờ"
           >
             <Palette className="w-3.5 h-3.5 text-[#D98A76]" />
-            <span>Hình Nền Web</span>
+            <span className="hidden sm:inline">Hình Nền</span>
           </button>
 
           {/* Nút Mã Nguồn 1 File */}
@@ -109,7 +121,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
             title="Xem mã nguồn HTML 1 file hoàn chỉnh để chạy độc lập"
           >
             <FileCode className="w-3.5 h-3.5 text-[#D98A76]" />
-            <span className="hidden sm:inline">Mã nguồn</span> HTML 1 File
+            <span className="hidden sm:inline">Mã nguồn</span> 1 File
           </button>
 
           {/* Nút Chỉnh Sửa Thông Tin Cặp Đôi */}
@@ -119,7 +131,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
             title="Đổi tên và ngày bắt đầu yêu"
           >
             <Edit3 className="w-3.5 h-3.5" />
-            <span>Chỉnh sửa</span>
+            <span>Sửa</span>
           </button>
         </div>
       </div>

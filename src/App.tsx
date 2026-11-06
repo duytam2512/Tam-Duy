@@ -7,6 +7,7 @@ import { PolaroidShareModal } from './components/PolaroidShareModal';
 import { StandaloneModal } from './components/StandaloneModal';
 import { BackgroundSettingsModal } from './components/BackgroundSettingsModal';
 import { MusicPlayer } from './components/MusicPlayer';
+import { ReadingModeView } from './components/ReadingModeView';
 import { Memory, CoupleInfo, BackgroundSettings, DEFAULT_BG_SETTINGS } from './types';
 import {
   getStoredMemories,
@@ -28,6 +29,7 @@ export function App() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isStandaloneOpen, setIsStandaloneOpen] = useState(false);
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
+  const [isReadingModeOpen, setIsReadingModeOpen] = useState(false);
   const [selectedLightboxIndex, setSelectedLightboxIndex] = useState<number | null>(null);
   const [selectedShareMemory, setSelectedShareMemory] = useState<Memory | null>(null);
 
@@ -147,6 +149,7 @@ export function App() {
           totalLikes={totalLikes}
           onOpenStandaloneModal={() => setIsStandaloneOpen(true)}
           onOpenBackgroundModal={() => setIsBackgroundModalOpen(true)}
+          onOpenReadingMode={() => setIsReadingModeOpen(true)}
         />
 
         {/* Bảng Kỷ Niệm (Masonry Grid & Dòng Thời Gian) */}
@@ -263,6 +266,14 @@ export function App() {
 
       {/* Trình Phát Nhạc Nền Góc Nhỏ (Music Player) */}
       <MusicPlayer />
+
+      {/* Chế Độ Đọc Nhật Ký Lãng Mạn (Reading Mode) */}
+      <ReadingModeView
+        isOpen={isReadingModeOpen}
+        onClose={() => setIsReadingModeOpen(false)}
+        memories={memories}
+        coupleInfo={coupleInfo}
+      />
     </div>
   );
 }
