@@ -1,0 +1,7 @@
+# Robots.txt for Nhà Chúng Mình
+User-agent: *
+Allow: /
+Disallow: /api/
+
+# Sitemap location for Google Search Console
+Sitemap: https://ais-dev-s6e6qysoiuecunr6m24r6u-116687240277.asia-east1.run.app/sitemap.xml

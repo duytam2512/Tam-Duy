@@ -1,0 +1,6 @@
+{
+  "name": "MediaVault Sync - Kho Lưu Trữ & Docs Hub",
+  "description": "Kho lưu trữ hình ảnh và video đa nguồn bảo mật, cho phép khóa mật khẩu cá nhân và tự động đồng bộ hình ảnh, video từ Google Docs của nhiều tài khoản.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

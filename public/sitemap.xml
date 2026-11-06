@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+  <url>
+    <loc>https://ais-dev-s6e6qysoiuecunr6m24r6u-116687240277.asia-east1.run.app/</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://images.unsplash.com/photo-1500382017468-9049fed747ef</image:loc>
+      <image:title>Bình Minh Trên Cánh Đồng Lúa Vàng Mùa Gặt</image:title>
+      <image:caption>Cánh đồng quê hương thơ mộng trong sương sớm</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://images.unsplash.com/photo-1506744038136-46273834b3fb</image:loc>
+      <image:title>Hoàng Hôn Êm Đềm Bên Lũy Tre &amp; Dòng Sông Quê</image:title>
+      <image:caption>Khung cảnh hoàng hôn thanh bình làng quê</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9</image:loc>
+      <image:title>Con Đò Gỗ Trôi Giữa Đầm Sen Ngát Hương</image:title>
+      <image:caption>Bông sen hồng tỏa hương mùa hạ</image:caption>
+    </image:image>
+  </url>
+</urlset>
