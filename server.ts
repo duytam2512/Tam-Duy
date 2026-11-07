@@ -32,104 +32,110 @@ const ai = new GoogleGenAI({
   },
 });
 
+import { generateSmartCaptions, CaptionTone } from "./src/utils/aiCaptionEngine";
+
 /**
  * API: /api/generate-caption
- * Tạo caption / nhật ký tình yêu bằng Gemini dựa trên ảnh, địa điểm, tâm trạng và thông tin hai bạn
+ * Tạo 5 caption / nhật ký tình yêu phong phú, đa dạng, không trùng lặp
+ * Tích hợp Gemini AI kết hợp thư viện thơ & danh ngôn tình yêu
  */
 app.post("/api/generate-caption", async (req, res) => {
-  try {
-    const {
-      location,
-      tone = "romantic", // 'romantic' | 'cute' | 'peaceful' | 'funny' | 'poem'
-      coupleNames = { personOne: "Anh", personTwo: "Em" },
-      keywords,
-      imageBase64,
-    } = req.body;
+  const {
+    location,
+    tone = "romantic",
+    coupleNames = { personOne: "Đức Duy", personTwo: "Thanh Tâm" },
+    keywords,
+    imageBase64,
+  } = req.body;
 
-    const toneDescriptions: Record<string, string> = {
-      romantic: "Sâu lắng, ấm áp, đậm chất thơ và tình cảm chân thành",
-      cute: "Ngọt ngào, đáng yêu, nhí nhảnh, dễ thương",
-      peaceful: "Nhẹ nhàng, bình yên, gợi cảm giác tĩnh lặng và an lòng",
-      funny: "Hài hước, dí dỏm, trêu đùa ngọt ngào giữa hai người yêu nhau",
-      poem: "Dạng 2-4 câu thơ tình lục bát hoặc thơ tự do ngắn đầy cảm xúc",
-    };
+  // Tạo sẵn 5 gợi ý sáng tạo từ smart engine để đảm bảo luôn luôn có kết quả tuyệt vời
+  const smartFallbacks = generateSmartCaptions({
+    personOne: coupleNames.personOne || "Đức Duy",
+    personTwo: coupleNames.personTwo || "Thanh Tâm",
+    location,
+    tone: (tone as CaptionTone) || "romantic",
+    keywords
+  }).map(item => item.text);
 
-    const selectedToneDesc = toneDescriptions[tone] || toneDescriptions.romantic;
+  // Nếu có API Key, thử gọi Gemini AI để sáng tác mới
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const toneDescriptions: Record<string, string> = {
+        romantic: "Sâu lắng, ấm áp, đậm chất thơ và tình cảm chân thành",
+        cute: "Ngọt ngào, đáng yêu, nhí nhảnh, dễ thương, ngọt xỉu",
+        peaceful: "Nhẹ nhàng, bình yên, gợi cảm giác tĩnh lặng và an lòng",
+        funny: "Hài hước, dí dỏm, trêu đùa ngọt ngào giữa hai người yêu nhau",
+        poem: "Dạng thơ tình 2-4 câu lục bát hoặc thơ tự do có vần điệu êm ái",
+        short: "Một câu ngắn gọn, tinh tế, bắt trend mạng xã hội (Instagram, Facebook Story)"
+      };
 
-    const promptText = `Bạn là một nhà thơ và người viết nhật ký tình yêu tinh tế cho cặp đôi ${coupleNames.personOne} & ${coupleNames.personTwo}.
-Hãy viết 3 gợi ý dòng caption / nhật ký kỷ niệm ngắn (mỗi gợi ý từ 1-3 câu, tối đa 50 từ) thật cảm xúc, tự nhiên và chạm đến trái tim.
-Ngữ cảnh:
-- Địa điểm: ${location || "Một góc nhỏ bình yên"}
-- Phong cách viết: ${selectedToneDesc}
-${keywords ? `- Chi tiết thêm: ${keywords}` : ""}
+      const selectedToneDesc = toneDescriptions[tone] || toneDescriptions.romantic;
 
-Yêu cầu xuất ra:
-Chỉ trả về định dạng JSON thuần túy (không markdown thừa):
+      const promptText = `Bạn là một nhà thơ và người viết nhật ký tình yêu tài hoa cho cặp đôi ${coupleNames.personOne} & ${coupleNames.personTwo}.
+Hãy sáng tác 5 gợi ý dòng caption / nhật ký kỷ niệm thật độc đáo, bay bổng, tràn ngập cảm xúc và TUYỆT ĐỐI KHÔNG SỬ DỤNG CÁC CÂU SÁO RỖNG LẶP LẠI.
+Ngữ cảnh kỷ niệm:
+- Địa điểm: ${location || "Một góc nhỏ bình yên của hai đứa"}
+- Cảm xúc chủ đạo: ${selectedToneDesc}
+${keywords ? `- Chi tiết hoặc kỷ niệm riêng: ${keywords}` : ""}
+
+Yêu cầu cụ thể:
+1. Mỗi câu gợi ý mang một sắc thái riêng (1 câu thơ, 1 câu ngắn gọn đăng Story, 1 dòng nhật ký sâu lắng, 1 câu ngọt ngào, 1 câu gắn liền với địa điểm).
+2. Tự nhiên xưng hô hoặc lồng ghép tên ${coupleNames.personOne} và ${coupleNames.personTwo} một cách tinh tế.
+3. Chỉ trả về duy nhất định dạng JSON thuần túy (không bọc trong markdown):
 {
   "suggestions": [
-    "Gợi ý 1...",
-    "Gợi ý 2...",
-    "Gợi ý 3..."
+    "Câu 1...",
+    "Câu 2...",
+    "Câu 3...",
+    "Câu 4...",
+    "Câu 5..."
   ]
 }`;
 
-    const parts: any[] = [];
+      const parts: any[] = [];
+      if (imageBase64 && typeof imageBase64 === "string" && imageBase64.includes(",")) {
+        const [meta, data] = imageBase64.split(",");
+        const mimeMatch = meta.match(/:(.*?);/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+        parts.push({
+          inlineData: {
+            mimeType,
+            data,
+          },
+        });
+      }
 
-    // Nếu người dùng gửi kèm ảnh (dưới dạng Base64), gửi cho Gemini nhận diện hình ảnh
-    if (imageBase64 && typeof imageBase64 === "string" && imageBase64.includes(",")) {
-      const [meta, data] = imageBase64.split(",");
-      const mimeMatch = meta.match(/:(.*?);/);
-      const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+      parts.push({ text: promptText });
 
-      parts.push({
-        inlineData: {
-          mimeType,
-          data,
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: parts.length === 1 ? parts[0].text : parts,
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.95,
         },
       });
+
+      const textOutput = (response.text ?? "").trim();
+      if (textOutput) {
+        const parsed = JSON.parse(textOutput);
+        if (Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0) {
+          return res.json({
+            success: true,
+            suggestions: parsed.suggestions,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("Gemini API call failed, using diverse smart engine:", err);
     }
-
-    parts.push({ text: promptText });
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: parts.length === 1 ? parts[0].text : { parts },
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
-
-    const textOutput = (response.text ?? "").trim();
-    let parsedData: { suggestions: string[] } = { suggestions: [] };
-    try {
-      parsedData = JSON.parse(textOutput);
-    } catch {
-      // Fallback nếu parse JSON lỗi
-      parsedData = {
-        suggestions: [
-          `Cảm ơn đời vì giữa thế giới rộng lớn này, ${coupleNames.personTwo} đã chọn dừng chân bên ${coupleNames.personOne}.`,
-          `Có những khoảnh khắc chỉ cần ngồi bên nhau tĩnh lặng, cũng đủ thấy lòng bình yên đến lạ.`,
-          `Thế giới ngoài kia dù có xô bồ, về bên nhau lại hóa thành góc nhỏ dịu dàng nhất.`
-        ],
-      };
-    }
-
-    return res.json({
-      success: true,
-      suggestions: parsedData.suggestions || [],
-    });
-  } catch (error: any) {
-    console.error("Lỗi Gemini API generate-caption:", error);
-    return res.status(500).json({
-      success: false,
-      message: error?.message || "Không thể tạo caption lúc này. Vui lòng thử lại.",
-      fallback: [
-        "Chỉ cần bên nhau, nơi đâu cũng hóa chốn bình yên.",
-        "Mỗi ngày trôi qua cùng nụ cười em là một ngày đáng nhớ nhất.",
-        "Cùng nhau đi qua những ngày nắng nhẹ, gom lại thành một góc trời bình yên."
-      ]
-    });
   }
+
+  // Trả về kết quả từ Smart Engine (5 câu mới mẻ, phong phú, không lặp)
+  return res.json({
+    success: true,
+    suggestions: smartFallbacks,
+  });
 });
 
 /**

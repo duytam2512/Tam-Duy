@@ -13,11 +13,13 @@ import {
   RefreshCw,
   Library,
   ChevronRight,
-  Flame
+  Flame,
+  Dices
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Memory, POPULAR_TAGS, SAMPLE_PHOTO_LIBRARY, CoupleInfo } from '../types';
 import { compressImageFile } from '../services/storage';
+import { generateSmartCaptions, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
 
 interface QuickUploadFormProps {
   onAddMemory: (memory: Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>) => void;
@@ -48,11 +50,9 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
   // Trạng thái Gemini AI Viết Caption
   const [isAiGenerating, setIsAiGenerating] = useState(false);
-  const [aiTone, setAiTone] = useState<'romantic' | 'cute' | 'peaceful' | 'funny' | 'poem'>(
-    'romantic'
-  );
+  const [aiTone, setAiTone] = useState<CaptionTone>('romantic');
   const [aiKeywords, setAiKeywords] = useState('');
-  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [aiSuggestions, setAiSuggestions] = useState<CaptionSuggestion[]>([]);
   const [showAiPanel, setShowAiPanel] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,9 +101,18 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     setShowPhotoLibrary(false);
   };
 
-  // Gọi Gemini AI để viết Caption
+  // Gọi Gemini AI & Smart Caption Engine để viết Caption phong phú, không lặp lại
   const handleGenerateAiCaption = async () => {
     setIsAiGenerating(true);
+
+    const fallbackSuggestions = generateSmartCaptions({
+      personOne: coupleInfo.personOne || 'Anh',
+      personTwo: coupleInfo.personTwo || 'Em',
+      location: location.trim(),
+      tone: aiTone,
+      keywords: aiKeywords.trim()
+    });
+
     try {
       const response = await fetch('/api/generate-caption', {
         method: 'POST',
@@ -120,25 +129,24 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
         })
       });
 
-      const data = await response.json();
-      if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
-        setAiSuggestions(data.suggestions);
-      } else if (Array.isArray(data.fallback)) {
-        setAiSuggestions(data.fallback);
-      } else {
-        setAiSuggestions([
-          `Góc nhỏ bình yên nơi ${coupleInfo.personOne} và ${coupleInfo.personTwo} cùng nhau viết nên những ngày dịu dàng.`,
-          `Có những ngày nắng đẹp, nhưng đẹp nhất vẫn là nụ cười của người đối diện.`,
-          `Mong cho hai đứa mình mãi bình yên bên nhau qua từng năm tháng dài rộng.`
-        ]);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+          const badges = ['Gợi ý hay', 'Thơ tình', 'Sâu lắng', 'Ngọt ngào', 'Story ngắn'];
+          const mapped: CaptionSuggestion[] = data.suggestions.map((text: string, idx: number) => ({
+            text,
+            badge: badges[idx % badges.length]
+          }));
+          setAiSuggestions(mapped);
+          return;
+        }
       }
+
+      // Nếu API không phản hồi hoặc trên static Vercel, dùng bộ gợi ý đa dạng không lặp
+      setAiSuggestions(fallbackSuggestions);
     } catch (error) {
-      console.error('Lỗi khi gọi AI Gemini:', error);
-      setAiSuggestions([
-        `Nơi lưu giữ từng khoảnh khắc dịu dàng nhất của hai đứa mình.`,
-        `Cùng em đi qua mọi con đường, bình yên gom lại vừa vặn trong một góc nhỏ.`,
-        `Thế giới rộng lớn là thế, nhưng an lòng nhất vẫn là khi ở cạnh bên em.`
-      ]);
+      console.warn('Lỗi gọi /api/generate-caption, chuyển sang kho gợi ý thông minh:', error);
+      setAiSuggestions(fallbackSuggestions);
     } finally {
       setIsAiGenerating(false);
     }
@@ -412,8 +420,9 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                       { id: 'romantic', label: '💖 Lãng mạn sâu lắng' },
                       { id: 'cute', label: '🌸 Dễ thương ngọt ngào' },
                       { id: 'peaceful', label: '🍃 Nhẹ nhàng bình yên' },
+                      { id: 'poem', label: '📜 Thơ tình ngắn' },
                       { id: 'funny', label: '😄 Trêu đùa dí dỏm' },
-                      { id: 'poem', label: '📜 Thơ tình ngắn' }
+                      { id: 'short', label: '⚡ Story ngắn 1 câu' }
                     ].map((t) => (
                       <button
                         key={t.id}
@@ -471,24 +480,42 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
             {/* Danh sách các câu caption được AI gợi ý */}
             {aiSuggestions.length > 0 && (
-              <div className="space-y-1.5 pt-2">
-                <span className="text-[11px] font-semibold text-[#8C6D58] block">
-                  Chọn 1 câu bạn thích để điền vào nhật ký:
-                </span>
-                {aiSuggestions.map((sug, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleApplyAiSuggestion(sug)}
-                    className="p-2.5 rounded-xl bg-white hover:bg-[#FFFDF9] border border-[#8C6D58]/15 hover:border-[#E8A598] cursor-pointer transition-all flex items-start justify-between gap-2 group shadow-2xs"
+              <div className="space-y-2 pt-2 border-t border-[#8C6D58]/15">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-[#8C6D58]">
+                    Gợi ý cảm xúc (Bấm vào câu bạn thích để điền vào nhật ký):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleGenerateAiCaption}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-[#D98A76] hover:text-[#3D2E28] bg-white px-2 py-0.5 rounded-lg border border-[#D98A76]/30 shadow-2xs hover:bg-[#FAF6F0] transition"
                   >
-                    <p className="font-handwriting text-lg sm:text-xl text-[#3D2E28] leading-tight">
-                      "{sug}"
-                    </p>
-                    <span className="text-[10px] font-semibold text-[#D98A76] group-hover:underline shrink-0 flex items-center gap-0.5 mt-1">
-                      Chọn câu này <ChevronRight className="w-3 h-3" />
-                    </span>
-                  </div>
-                ))}
+                    <Dices className="w-3.5 h-3.5" />
+                    <span>Đổi 5 câu khác</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  {aiSuggestions.map((sug, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => handleApplyAiSuggestion(sug.text)}
+                      className="p-3 rounded-xl bg-white hover:bg-[#FFFDF9] border border-[#8C6D58]/15 hover:border-[#E8A598] cursor-pointer transition-all flex flex-col gap-1.5 group shadow-2xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FAF6F0] text-[#C87D55] border border-[#E8A598]/20">
+                          {sug.badge}
+                        </span>
+                        <span className="text-[10px] font-semibold text-[#D98A76] group-hover:underline flex items-center gap-0.5">
+                          Chọn câu này <ChevronRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                      <p className="font-handwriting text-lg sm:text-xl text-[#3D2E28] leading-snug whitespace-pre-line">
+                        "{sug.text}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
