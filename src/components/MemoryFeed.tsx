@@ -12,7 +12,8 @@ import {
   Tag,
   Filter,
   Sparkles,
-  ChevronDown
+  ChevronDown,
+  Layers
 } from 'lucide-react';
 import { Memory, ViewMode, POPULAR_TAGS, CoupleInfo } from '../types';
 
@@ -221,6 +222,14 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                     <span>{item.tag || 'Kỷ niệm'}</span>
                   </div>
 
+                  {/* Multi-photo badge */}
+                  {item.images && item.images.length > 1 && (
+                    <div className="absolute top-2.5 right-2.5 px-2.5 py-1 bg-black/65 backdrop-blur-xs text-white text-[11px] font-bold rounded-full shadow-xs flex items-center gap-1">
+                      <Layers className="w-3 h-3 text-[#E8A598]" />
+                      <span>{item.images.length} ảnh</span>
+                    </div>
+                  )}
+
                   {/* Hover hint */}
                   <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-medium">
                     Bấm để phóng to ảnh
@@ -324,13 +333,19 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                   {/* Photo */}
                   <div
                     onClick={() => onOpenLightbox(item)}
-                    className="sm:w-48 h-48 rounded-xl overflow-hidden cursor-pointer bg-[#F9F6F0] shrink-0"
+                    className="sm:w-48 h-48 rounded-xl overflow-hidden cursor-pointer bg-[#F9F6F0] shrink-0 relative group"
                   >
                     <img
                       src={item.imageUrl}
                       alt={item.caption}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
+                    {item.images && item.images.length > 1 && (
+                      <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 backdrop-blur-xs text-white text-[10px] font-bold rounded-full shadow-xs flex items-center gap-1">
+                        <Layers className="w-2.5 h-2.5 text-[#E8A598]" />
+                        <span>{item.images.length} ảnh</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Info */}

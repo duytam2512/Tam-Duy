@@ -1,6 +1,7 @@
 export interface Memory {
   id: string;
   imageUrl: string;
+  images?: string[]; // Mảng nhiều ảnh nếu kỷ niệm là album nhiều ảnh
   date: string; // YYYY-MM-DD
   location: string;
   caption: string;

@@ -117,20 +117,27 @@ export function App() {
   // Tổng số lượt yêu thích
   const totalLikes = memories.reduce((acc, curr) => acc + (curr.likes || 0), 0);
 
-  // Thêm kỷ niệm mới (Lưu cả LocalStorage và Cloud Firestore)
-  const handleAddMemory = async (newMemData: Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>) => {
-    const newMemory: Memory = {
-      ...newMemData,
-      id: `mem-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+  // Thêm kỷ niệm mới (hỗ trợ cả 1 kỷ niệm hoặc danh sách nhiều kỷ niệm)
+  const handleAddMemory = async (
+    newMemData:
+      | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>
+      | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>[]
+  ) => {
+    const items = Array.isArray(newMemData) ? newMemData : [newMemData];
+    const newMemories: Memory[] = items.map((item, idx) => ({
+      ...item,
+      id: `mem-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
       likes: 1,
       isLiked: true,
-      createdAt: Date.now()
-    };
+      createdAt: Date.now() + idx
+    }));
 
-    const updated = [newMemory, ...memories];
+    const updated = [...newMemories, ...memories];
     setMemories(updated);
     saveMemoriesToStorage(updated);
-    await saveSharedMemory(newMemory);
+    for (const mem of newMemories) {
+      await saveSharedMemory(mem);
+    }
   };
 
   // Thả tim kỷ niệm

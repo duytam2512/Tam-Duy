@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Camera,
   Image as ImageIcon,
@@ -13,9 +13,14 @@ import {
   RefreshCw,
   Library,
   ChevronRight,
+  ChevronLeft,
   Flame,
   Dices,
-  Smile
+  Smile,
+  Plus,
+  Trash2,
+  Layers,
+  FileCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Memory, POPULAR_TAGS, SAMPLE_PHOTO_LIBRARY, CoupleInfo } from '../types';
@@ -23,7 +28,11 @@ import { compressImageFile } from '../services/storage';
 import { generateSmartCaptions, extractContextualEmojis, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
 
 interface QuickUploadFormProps {
-  onAddMemory: (memory: Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>) => void;
+  onAddMemory: (
+    memory:
+      | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>
+      | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>[]
+  ) => void;
   isOpen: boolean;
   onClose: () => void;
   coupleInfo: CoupleInfo;
@@ -35,11 +44,16 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   onClose,
   coupleInfo
 }) => {
-  const [imagePreview, setImagePreview] = useState<string>('');
+  // Danh sách ảnh đã chọn (hỗ trợ chọn nhiều ảnh)
+  const [images, setImages] = useState<string[]>([]);
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
+  const [uploadMode, setUploadMode] = useState<'album' | 'individual'>('album');
+
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [location, setLocation] = useState<string>('');
   const [caption, setCaption] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string>('Kỷ niệm');
+  const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -62,15 +76,40 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Đảm bảo activeImageIndex luôn hợp lệ
+  useEffect(() => {
+    if (activeImageIndex >= images.length && images.length > 0) {
+      setActiveImageIndex(images.length - 1);
+    }
+  }, [images.length, activeImageIndex]);
+
+  const activeImage = images[activeImageIndex] || images[0] || '';
+
+  // Xử lý khi người dùng chọn nhiều file ảnh từ máy / điện thoại
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setValidationError(null);
+    setIsCompressing(true);
 
     try {
-      const compressed = await compressImageFile(file, 1280, 0.85);
-      setImagePreview(compressed);
+      const compressedList = await Promise.all(
+        files.map((file) => compressImageFile(file, 1280, 0.85))
+      );
+      setImages((prev) => {
+        const next = [...prev, ...compressedList];
+        if (prev.length === 0) setActiveImageIndex(0);
+        return next;
+      });
     } catch (err) {
       console.warn('Lỗi nén ảnh:', err);
+      setValidationError('Không thể xử lý một số ảnh. Bạn vui lòng thử lại nhé!');
+    } finally {
+      setIsCompressing(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -86,20 +125,38 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      try {
-        const compressed = await compressImageFile(file, 1280, 0.85);
-        setImagePreview(compressed);
-      } catch (err) {
-        console.warn('Lỗi khi nén ảnh kéo thả:', err);
-      }
+    setValidationError(null);
+    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+
+    setIsCompressing(true);
+    try {
+      const compressedList = await Promise.all(
+        files.map((file) => compressImageFile(file, 1280, 0.85))
+      );
+      setImages((prev) => {
+        const next = [...prev, ...compressedList];
+        if (prev.length === 0) setActiveImageIndex(0);
+        return next;
+      });
+    } catch (err) {
+      console.warn('Lỗi khi nén ảnh kéo thả:', err);
+    } finally {
+      setIsCompressing(false);
     }
   };
 
-  // Chọn ảnh từ Kho ảnh mẫu
+  // Chọn ảnh từ Kho ảnh mẫu (cho phép chọn thêm nhiều ảnh)
   const handleSelectSample = (url: string, suggestedLocation: string) => {
-    setImagePreview(url);
+    setValidationError(null);
+    setImages((prev) => {
+      if (prev.includes(url)) {
+        // Nếu đã có thì bỏ chọn
+        return prev.filter((item) => item !== url);
+      }
+      return [...prev, url];
+    });
+
     if (!location) {
       setLocation(suggestedLocation);
     }
@@ -110,7 +167,18 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       tone: aiTone
     });
     setSuggestedEmojis(matchingEmojis);
-    setShowPhotoLibrary(false);
+  };
+
+  // Xóa một ảnh khỏi danh sách đã chọn
+  const handleRemoveImage = (indexToRemove: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  // Xóa toàn bộ ảnh đã chọn
+  const handleClearAllImages = () => {
+    setImages([]);
+    setActiveImageIndex(0);
   };
 
   // Gọi Gemini AI & Smart Caption Engine để viết Caption phong phú, không lặp lại
@@ -141,7 +209,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             personTwo: coupleInfo.personTwo || 'Em'
           },
           keywords: aiKeywords.trim(),
-          imageBase64: imagePreview.startsWith('data:image') ? imagePreview : undefined
+          imageBase64: activeImage.startsWith('data:image') ? activeImage : undefined
         })
       });
 
@@ -173,7 +241,6 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
         }
       }
 
-      // Nếu API không phản hồi hoặc trên static Vercel, dùng bộ gợi ý đa dạng không lặp
       setAiSuggestions(smartResult.suggestions);
     } catch (error) {
       console.warn('Lỗi gọi /api/generate-caption, chuyển sang kho gợi ý thông minh:', error);
@@ -187,11 +254,16 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     setCaption(suggestionText);
   };
 
+  const handleAddEmojiToCaption = (emoji: string) => {
+    setCaption((prev) => (prev ? `${prev} ${emoji}` : emoji));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
-    if (!imagePreview) {
-      setValidationError('Vui lòng chọn hoặc tải lên một tấm ảnh kỷ niệm nhé!');
+
+    if (images.length === 0) {
+      setValidationError('Vui lòng chọn hoặc tải lên ít nhất một tấm ảnh kỷ niệm nhé!');
       return;
     }
     if (!caption.trim()) {
@@ -201,44 +273,64 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
     setIsSubmitting(true);
 
-    onAddMemory({
-      imageUrl: imagePreview,
-      date: date || new Date().toISOString().split('T')[0],
-      location: location.trim() || 'Một nơi bình yên',
-      caption: caption.trim(),
-      tag: selectedTag || 'Kỷ niệm'
-    });
+    const memoryLocation = location.trim() || 'Một nơi bình yên';
+    const memoryTag = selectedTag || 'Kỷ niệm';
+    const memoryDate = date || new Date().toISOString().split('T')[0];
+
+    if (uploadMode === 'album' || images.length === 1) {
+      // 1 bài viết album có nhiều ảnh
+      onAddMemory({
+        imageUrl: images[0],
+        images: images,
+        date: memoryDate,
+        location: memoryLocation,
+        caption: caption.trim(),
+        tag: memoryTag
+      });
+    } else {
+      // Đăng thành nhiều bài viết riêng biệt (mỗi ảnh 1 bài)
+      const list = images.map((imgUrl, i) => ({
+        imageUrl: imgUrl,
+        images: [imgUrl],
+        date: memoryDate,
+        location: memoryLocation,
+        caption: images.length > 1 ? `${caption.trim()} (Ảnh #${i + 1})` : caption.trim(),
+        tag: memoryTag
+      }));
+      onAddMemory(list);
+    }
 
     confetti({
-      particleCount: 50,
-      spread: 70,
+      particleCount: 60,
+      spread: 75,
       origin: { y: 0.6 },
       colors: ['#E8A598', '#F9DCC4', '#D98A76']
     });
 
+    setIsSubmitting(false);
     // Reset form
-    setImagePreview('');
-    setLocation('');
+    setImages([]);
     setCaption('');
+    setLocation('');
     setAiSuggestions([]);
     setShowAiPanel(false);
-    setIsSubmitting(false);
     onClose();
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-[#FFFDF9] rounded-3xl p-5 sm:p-7 max-w-2xl w-full border border-[#8C6D58]/20 shadow-2xl relative my-6">
-        {/* Close Button */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn">
+      <div className="bg-[#FFFDF9] rounded-3xl border border-[#8C6D58]/20 shadow-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto p-5 sm:p-7 relative card-warm-pastel">
+        {/* Nút đóng */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-full transition-all"
+          className="absolute top-4 right-4 p-2 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-full transition-all cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
 
+        {/* Header Modal */}
         <div className="mb-4">
           <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#D98A76] bg-[#E8A598]/15 px-3 py-1 rounded-full mb-1.5">
             <Sparkles className="w-3.5 h-3.5" />
@@ -248,7 +340,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             Đăng Kỷ Niệm Của Hai Đứa
           </h2>
           <p className="text-xs text-[#8C6D58] mt-0.5">
-            Chọn ảnh từ máy hoặc kho ảnh mẫu ấm áp, kết nối Gemini AI để viết những dòng cảm xúc ngọt ngào
+            Chọn một hoặc nhiều ảnh cùng lúc, kết nối Gemini AI để viết những dòng cảm xúc ngọt ngào
           </p>
         </div>
 
@@ -259,17 +351,23 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             </div>
           )}
 
-          {/* Ô Chọn / Tải ảnh lên với Live Preview */}
+          {/* Ô Chọn / Tải nhiều ảnh lên với Live Preview */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-[#8C6D58]">
-                Hình ảnh kỷ niệm <span className="text-[#D98A76]">*</span>
+              <label className="text-xs font-semibold text-[#8C6D58] flex items-center gap-1.5">
+                <span>Hình ảnh kỷ niệm</span>
+                {images.length > 0 && (
+                  <span className="bg-[#E8A598]/20 text-[#D98A76] px-2 py-0.5 rounded-full text-[11px] font-bold">
+                    {images.length} ảnh đã chọn
+                  </span>
+                )}
+                <span className="text-[#D98A76]">*</span>
               </label>
 
               <button
                 type="button"
                 onClick={() => setShowPhotoLibrary(!showPhotoLibrary)}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] bg-[#F9F6F0] hover:bg-[#E8A598]/20 px-2.5 py-1 rounded-full transition-all"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] bg-[#F9F6F0] hover:bg-[#E8A598]/20 px-2.5 py-1 rounded-full transition-all cursor-pointer"
               >
                 <Library className="w-3.5 h-3.5" />
                 <span>{showPhotoLibrary ? 'Đóng kho ảnh mẫu' : 'Mở kho ảnh mẫu (+20 ảnh)'}</span>
@@ -278,14 +376,23 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
             {/* Kho Ảnh Mẫu Mở Rộng */}
             {showPhotoLibrary && (
-              <div className="bg-[#FAF6F0] rounded-2xl p-3 border border-[#8C6D58]/20 mb-3 space-y-2">
-                <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
+              <div className="bg-[#FAF6F0] rounded-2xl p-3 border border-[#8C6D58]/20 mb-3 space-y-2 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#8C6D58]">
+                    Bấm vào từng ảnh để chọn / bỏ chọn nhiều ảnh mẫu:
+                  </span>
+                  <span className="text-[11px] text-[#D98A76] font-medium">
+                    Đã chọn {images.length} ảnh
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs no-scrollbar">
                   {SAMPLE_PHOTO_LIBRARY.map((cat) => (
                     <button
                       key={cat.category}
                       type="button"
                       onClick={() => setActiveSampleCategory(cat.category)}
-                      className={`px-3 py-1 rounded-full whitespace-nowrap transition-all font-medium ${
+                      className={`px-3 py-1 rounded-full whitespace-nowrap transition-all font-medium cursor-pointer ${
                         activeSampleCategory === cat.category
                           ? 'bg-[#E8A598] text-white shadow-xs'
                           : 'bg-white text-[#8C6D58] hover:text-[#3D2E28]'
@@ -298,49 +405,211 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 max-h-48 overflow-y-auto">
                   {SAMPLE_PHOTO_LIBRARY.find((c) => c.category === activeSampleCategory)?.items.map(
-                    (item) => (
-                      <div
-                        key={item.title}
-                        onClick={() => handleSelectSample(item.url, item.suggestedLocation)}
-                        className="group relative rounded-xl overflow-hidden cursor-pointer aspect-4/3 border border-[#8C6D58]/15 hover:border-[#D98A76] shadow-xs"
-                      >
-                        <img
-                          src={item.url}
-                          alt={item.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          loading="lazy"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-1.5">
-                          <span className="text-[10px] text-white font-medium truncate">
-                            {item.title}
-                          </span>
+                    (item) => {
+                      const isSelected = images.includes(item.url);
+                      return (
+                        <div
+                          key={item.title}
+                          onClick={() => handleSelectSample(item.url, item.suggestedLocation)}
+                          className={`group relative rounded-xl overflow-hidden cursor-pointer aspect-4/3 border-2 transition-all shadow-xs ${
+                            isSelected
+                              ? 'border-[#D98A76] ring-2 ring-[#E8A598]/50'
+                              : 'border-transparent hover:border-[#D98A76]/50'
+                          }`}
+                        >
+                          <img
+                            src={item.url}
+                            alt={item.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            loading="lazy"
+                          />
+                          {isSelected && (
+                            <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-[#D98A76] text-white flex items-center justify-center shadow-xs">
+                              <Check className="w-3 h-3" />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-1.5">
+                            <span className="text-[10px] text-white font-medium truncate">
+                              {item.title}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    )
+                      );
+                    }
                   )}
                 </div>
               </div>
             )}
 
-            {imagePreview ? (
-              <div className="relative rounded-2xl overflow-hidden border-2 border-[#E8A598]/40 shadow-xs max-h-60 group bg-[#F9F6F0]">
-                <img
-                  src={imagePreview}
-                  alt="Ảnh kỷ niệm xem trước"
-                  className="w-full h-52 sm:h-60 object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => setImagePreview('')}
-                  className="absolute top-3 right-3 p-1.5 bg-black/60 text-white hover:bg-black/80 rounded-full transition-all shadow-md"
-                  title="Đổi ảnh khác"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/55 text-white text-[11px] rounded-lg backdrop-blur-xs flex items-center gap-1">
-                  <Check className="w-3 h-3 text-[#E8A598]" />
-                  <span>Ảnh đã tối ưu cho web</span>
+            {/* Vùng xem trước ảnh đã chọn */}
+            {images.length > 0 ? (
+              <div className="space-y-3">
+                {/* Ảnh chính xem trước to rõ */}
+                <div className="relative rounded-2xl overflow-hidden border-2 border-[#E8A598]/40 shadow-xs max-h-60 group bg-[#F9F6F0]">
+                  <img
+                    src={activeImage}
+                    alt="Ảnh kỷ niệm xem trước"
+                    className="w-full h-52 sm:h-60 object-cover"
+                  />
+
+                  {/* Nút lướt ảnh kế / trước nếu có nhiều ảnh */}
+                  {images.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveImageIndex((prev) => (prev > 0 ? prev - 1 : images.length - 1))
+                        }
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1.5 bg-black/50 hover:bg-black/75 text-white rounded-full transition-all cursor-pointer"
+                        title="Ảnh trước"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveImageIndex((prev) => (prev < images.length - 1 ? prev + 1 : 0))
+                        }
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 bg-black/50 hover:bg-black/75 text-white rounded-full transition-all cursor-pointer"
+                        title="Ảnh tiếp theo"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+
+                  {/* Badges trên ảnh */}
+                  <div className="absolute top-3 left-3 px-2.5 py-1 bg-black/60 text-white text-[11px] font-semibold rounded-lg backdrop-blur-xs flex items-center gap-1">
+                    <ImageIcon className="w-3 h-3 text-[#E8A598]" />
+                    <span>
+                      Ảnh {activeImageIndex + 1} / {images.length}
+                    </span>
+                  </div>
+
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(activeImageIndex)}
+                      className="p-1.5 bg-rose-600/80 hover:bg-rose-700 text-white rounded-full transition-all shadow-md cursor-pointer"
+                      title="Xóa ảnh này"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/55 text-white text-[11px] rounded-lg backdrop-blur-xs flex items-center gap-1">
+                    <Check className="w-3 h-3 text-[#E8A598]" />
+                    <span>Đã tối ưu cho cả web & điện thoại</span>
+                  </div>
                 </div>
+
+                {/* Danh sách dải thumbnail các ảnh đã chọn */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1.5 no-scrollbar">
+                  {images.map((imgUrl, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => setActiveImageIndex(idx)}
+                      className={`relative w-16 h-16 sm:w-18 sm:h-18 rounded-xl overflow-hidden cursor-pointer shrink-0 border-2 transition-all group ${
+                        activeImageIndex === idx
+                          ? 'border-[#D98A76] ring-2 ring-[#E8A598]'
+                          : 'border-[#8C6D58]/20 hover:border-[#E8A598]'
+                      }`}
+                    >
+                      <img src={imgUrl} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+                      <div className="absolute top-0 left-0 bg-black/60 text-white text-[9px] px-1 rounded-br font-semibold">
+                        #{idx + 1}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleRemoveImage(idx, e)}
+                        className="absolute top-1 right-1 p-0.5 bg-black/70 hover:bg-rose-600 text-white rounded-full transition-colors opacity-80 group-hover:opacity-100"
+                        title="Xóa ảnh này"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+
+                  {/* Nút thêm ảnh vào danh sách */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl border-2 border-dashed border-[#D98A76]/50 hover:border-[#D98A76] bg-[#E8A598]/10 hover:bg-[#E8A598]/20 flex flex-col items-center justify-center text-[#D98A76] transition-all shrink-0 cursor-pointer"
+                    title="Chọn thêm ảnh từ máy"
+                  >
+                    <Plus className="w-5 h-5" />
+                    <span className="text-[10px] font-semibold mt-0.5">Thêm ảnh</span>
+                  </button>
+
+                  {/* Nút xóa tất cả */}
+                  <button
+                    type="button"
+                    onClick={handleClearAllImages}
+                    className="text-[11px] text-rose-600 hover:text-rose-700 hover:underline px-2 shrink-0 cursor-pointer font-medium"
+                  >
+                    Xóa tất cả
+                  </button>
+                </div>
+
+                {/* Tùy chọn cách đăng khi chọn từ 2 ảnh trở lên */}
+                {images.length > 1 && (
+                  <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#8C6D58]/15 space-y-2 animate-fadeIn">
+                    <span className="text-xs font-semibold text-[#8C6D58] block">
+                      Tùy chọn hiển thị ({images.length} ảnh):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                          uploadMode === 'album'
+                            ? 'bg-white border-[#D98A76] shadow-xs'
+                            : 'border-[#8C6D58]/15 hover:bg-white/60'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="uploadMode"
+                          checked={uploadMode === 'album'}
+                          onChange={() => setUploadMode('album')}
+                          className="mt-0.5 text-[#D98A76] focus:ring-[#E8A598]"
+                        />
+                        <div>
+                          <div className="text-xs font-bold text-[#3D2E28] flex items-center gap-1">
+                            <Layers className="w-3.5 h-3.5 text-[#D98A76]" />
+                            <span>1 bài viết Album ({images.length} ảnh)</span>
+                          </div>
+                          <p className="text-[11px] text-[#8C6D58] mt-0.5">
+                            Gộp chung một bài viết kỷ niệm, có thể lướt xem toàn bộ {images.length} ảnh
+                          </p>
+                        </div>
+                      </label>
+
+                      <label
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                          uploadMode === 'individual'
+                            ? 'bg-white border-[#D98A76] shadow-xs'
+                            : 'border-[#8C6D58]/15 hover:bg-white/60'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="uploadMode"
+                          checked={uploadMode === 'individual'}
+                          onChange={() => setUploadMode('individual')}
+                          className="mt-0.5 text-[#D98A76] focus:ring-[#E8A598]"
+                        />
+                        <div>
+                          <div className="text-xs font-bold text-[#3D2E28] flex items-center gap-1">
+                            <FileCheck className="w-3.5 h-3.5 text-[#D98A76]" />
+                            <span>{images.length} bài viết riêng biệt</span>
+                          </div>
+                          <p className="text-[11px] text-[#8C6D58] mt-0.5">
+                            Đăng từng ảnh thành 1 bài viết riêng biệt trên bảng tin
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div
@@ -348,30 +617,39 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all ${
+                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
                   isDragging
                     ? 'border-[#D98A76] bg-[#E8A598]/15 scale-[0.99]'
                     : 'border-[#8C6D58]/25 hover:border-[#E8A598] bg-white hover:bg-[#FAF6F0]'
                 }`}
               >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-[#E8A598]/15 flex items-center justify-center text-[#D98A76]">
-                  <Camera className="w-5 h-5" />
+                <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-[#E8A598]/15 flex items-center justify-center text-[#D98A76]">
+                  <Camera className="w-6 h-6" />
                 </div>
                 <p className="text-xs sm:text-sm font-semibold text-[#3D2E28]">
-                  Bấm để chọn ảnh từ điện thoại / máy tính hoặc kéo thả vào đây
+                  Bấm để chọn nhiều ảnh từ điện thoại / máy tính hoặc kéo thả vào đây
                 </p>
-                <p className="text-[11px] text-[#8C6D58] mt-0.5">
-                  Tự động tối ưu dung lượng WebP/JPEG hiển thị mượt mà trên mọi thiết bị
+                <p className="text-[11px] text-[#8C6D58] mt-1">
+                  💡 Bạn có thể chọn <span className="text-[#D98A76] font-semibold">nhiều ảnh cùng lúc</span> để đăng thành album kỷ niệm xinh xắn
                 </p>
+                {isCompressing && (
+                  <div className="mt-2 text-xs text-[#D98A76] font-medium flex items-center justify-center gap-1.5 animate-pulse">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang tối ưu dung lượng ảnh...</span>
+                  </div>
+                )}
               </div>
             )}
+
+            {/* Input file ẩn hỗ trợ multiple */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={handleFileChange}
+              className="hidden"
+            />
           </div>
 
           {/* Ô nhập ngày kỷ niệm & Thể loại */}
@@ -419,203 +697,214 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
               Địa điểm kỷ niệm
             </label>
             <div className="relative">
-              <MapPin className="w-4 h-4 text-[#D98A76] absolute left-3 top-2.5 pointer-events-none" />
+              <MapPin className="w-4 h-4 text-[#8C6D58] absolute left-3 top-2.5 pointer-events-none" />
               <input
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="Ví dụ: Tiệm cà phê nhỏ, Đà Lạt, chuyến đi biển..."
+                placeholder="Ví dụ: Bờ Hồ Tây, Tiệm Cà Phê Mộc Đà Lạt, Góc Bếp Nhỏ..."
                 className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
               />
             </div>
           </div>
 
-          {/* KHUNG AI GEMINI VIẾT CAPTION & NHẬT KÝ */}
-          <div className="bg-[#FAF6F0] rounded-2xl p-3.5 border border-[#8C6D58]/20 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-[#3D2E28]">
-                <Wand2 className="w-4 h-4 text-[#D98A76] animate-pulse" />
-                <span>AI Gemini Viết Caption Tình Yêu</span>
-              </div>
+          {/* Ô viết caption / Nhật ký cảm xúc kèm Trợ lý Gemini AI */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-[#8C6D58]">
+                Dòng nhật ký / Cảm xúc <span className="text-[#D98A76]">*</span>
+              </label>
+
+              {/* Nút mở bảng trợ lý Gemini AI */}
               <button
                 type="button"
                 onClick={() => setShowAiPanel(!showAiPanel)}
-                className="text-[11px] font-semibold text-[#D98A76] hover:underline"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] bg-[#E8A598]/15 hover:bg-[#E8A598]/25 px-3 py-1 rounded-full transition-all cursor-pointer"
               >
-                {showAiPanel ? 'Thu gọn' : 'Mở bảng tùy chọn AI'}
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{showAiPanel ? 'Đóng gợi ý AI' : 'Gemini AI Viết Caption'}</span>
               </button>
             </div>
 
+            {/* BẢNG TRỢ LÝ GEMINI AI & SMART CAPTION */}
             {showAiPanel && (
-              <div className="space-y-2.5 pt-1 border-t border-[#8C6D58]/10 text-xs">
-                {/* Tone selection */}
-                <div>
-                  <span className="text-[11px] font-medium text-[#8C6D58] block mb-1">
-                    Phong cách cảm xúc:
+              <div className="bg-[#FAF7F2] border border-[#E8A598]/30 rounded-2xl p-3.5 sm:p-4 mb-3 space-y-3 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#3D2E28]">
+                    <Wand2 className="w-4 h-4 text-[#D98A76]" />
+                    <span>Gemini AI Viết Caption Tình Yêu (Đa dạng, không lặp)</span>
+                  </div>
+                  <span className="text-[10px] text-[#8C6D58] bg-white px-2 py-0.5 rounded-full border border-[#8C6D58]/10 font-semibold">
+                    {images.length > 0 ? `Nhìn ảnh #${activeImageIndex + 1}` : 'Tùy chỉnh'}
                   </span>
-                  <div className="flex flex-wrap gap-1.5">
+                </div>
+
+                {/* Chọn sắc thái cảm xúc */}
+                <div>
+                  <span className="text-[11px] font-semibold text-[#8C6D58] block mb-1">
+                    Chọn phong cách viết:
+                  </span>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 text-[11px]">
                     {[
-                      { id: 'romantic', label: '💖 Lãng mạn sâu lắng' },
-                      { id: 'cute', label: '🌸 Dễ thương ngọt ngào' },
-                      { id: 'peaceful', label: '🍃 Nhẹ nhàng bình yên' },
-                      { id: 'poem', label: '📜 Thơ tình ngắn' },
-                      { id: 'funny', label: '😄 Trêu đùa dí dỏm' },
-                      { id: 'short', label: '⚡ Story ngắn 1 câu' }
-                    ].map((t) => (
+                      { id: 'romantic', label: 'Lãng mạn', icon: '💖' },
+                      { id: 'cute', label: 'Đáng yêu', icon: '🥰' },
+                      { id: 'peaceful', label: 'Bình yên', icon: '🍃' },
+                      { id: 'poem', label: 'Thơ tình', icon: '📜' },
+                      { id: 'short', label: 'Story ngắn', icon: '✨' },
+                      { id: 'funny', label: 'Hài hước', icon: '😆' }
+                    ].map((item) => (
                       <button
-                        key={t.id}
+                        key={item.id}
                         type="button"
-                        onClick={() => setAiTone(t.id as any)}
-                        className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${
-                          aiTone === t.id
-                            ? 'bg-[#E8A598] text-white font-semibold shadow-xs'
-                            : 'bg-white text-[#8C6D58] hover:text-[#3D2E28] border border-[#8C6D58]/15'
+                        onClick={() => setAiTone(item.id as CaptionTone)}
+                        className={`px-2 py-1.5 rounded-xl border text-center transition-all cursor-pointer font-medium ${
+                          aiTone === item.id
+                            ? 'bg-[#E8A598] text-white border-[#E8A598] font-semibold shadow-xs'
+                            : 'bg-white text-[#8C6D58] border-[#8C6D58]/15 hover:border-[#E8A598]'
                         }`}
                       >
-                        {t.label}
+                        <span className="block text-xs">{item.icon}</span>
+                        <span className="truncate block mt-0.5">{item.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Gợi ý chi tiết thêm */}
+                {/* Từ khóa hoặc chi tiết kỷ niệm */}
                 <div>
                   <input
                     type="text"
                     value={aiKeywords}
                     onChange={(e) => setAiKeywords(e.target.value)}
-                    placeholder="Gợi ý thêm cho AI (ví dụ: ngày mưa lạnh, em cười xinh, uống trà nóng...)"
+                    placeholder="Gợi ý chi tiết thêm (ly cafe, nắm tay, trời mưa, hoàng hôn...)..."
                     className="w-full px-3 py-1.5 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
                   />
                 </div>
-              </div>
-            )}
 
-            {/* Nút kích hoạt AI */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={isAiGenerating}
-                onClick={handleGenerateAiCaption}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#E8A598] to-[#D98A76] hover:opacity-95 text-white font-semibold text-xs shadow-xs transition-all active:scale-95 disabled:opacity-50"
-              >
-                {isAiGenerating ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Gemini đang sáng tác...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Tạo gợi ý cảm xúc với Gemini AI</span>
-                  </>
-                )}
-              </button>
-              <span className="text-[11px] text-[#8C6D58]">
-                {imagePreview ? '✨ AI sẽ nhìn ảnh để viết' : '✨ Dựa theo ngữ cảnh'}
-              </span>
-            </div>
-
-            {/* Danh sách các câu caption được AI gợi ý */}
-            {aiSuggestions.length > 0 && (
-              <div className="space-y-2 pt-2 border-t border-[#8C6D58]/15">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-[#8C6D58]">
-                    Gợi ý cảm xúc (Bấm vào câu bạn thích để điền vào nhật ký):
-                  </span>
+                {/* Nút bấm sáng tác */}
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={isAiGenerating}
                     onClick={handleGenerateAiCaption}
-                    className="flex items-center gap-1 text-[11px] font-semibold text-[#D98A76] hover:text-[#3D2E28] bg-white px-2 py-0.5 rounded-lg border border-[#D98A76]/30 shadow-2xs hover:bg-[#FAF6F0] transition"
+                    className="flex-1 py-2 px-4 rounded-xl bg-gradient-to-r from-[#E8A598] to-[#D98A76] hover:from-[#D98A76] hover:to-[#C87D55] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <Dices className="w-3.5 h-3.5" />
-                    <span>Đổi 5 câu khác</span>
+                    {isAiGenerating ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Đang sáng tác 5 câu mới...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Sáng tác 5 gợi ý cảm xúc</span>
+                      </>
+                    )}
                   </button>
+
+                  {aiSuggestions.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={isAiGenerating}
+                      onClick={handleGenerateAiCaption}
+                      className="px-3 py-2 bg-white hover:bg-[#F9F6F0] border border-[#8C6D58]/20 text-[#8C6D58] hover:text-[#3D2E28] rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                      title="Đổi sang 5 câu khác"
+                    >
+                      <Dices className="w-3.5 h-3.5 text-[#D98A76]" />
+                      <span>Đổi câu khác</span>
+                    </button>
+                  )}
                 </div>
 
-                <div className="space-y-1.5">
-                  {aiSuggestions.map((sug, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => handleApplyAiSuggestion(sug.text)}
-                      className="p-3 rounded-xl bg-white hover:bg-[#FFFDF9] border border-[#8C6D58]/15 hover:border-[#E8A598] cursor-pointer transition-all flex flex-col gap-1.5 group shadow-2xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FAF6F0] text-[#C87D55] border border-[#E8A598]/20">
-                          {sug.badge}
-                        </span>
-                        <span className="text-[10px] font-semibold text-[#D98A76] group-hover:underline flex items-center gap-0.5">
-                          Chọn câu này <ChevronRight className="w-3 h-3" />
-                        </span>
+                {/* Danh sách 5 gợi ý AI */}
+                {aiSuggestions.length > 0 && (
+                  <div className="space-y-2 pt-1 max-h-56 overflow-y-auto">
+                    <span className="text-[11px] font-semibold text-[#8C6D58] block">
+                      Bấm vào câu bạn thích để áp dụng vào bài viết:
+                    </span>
+                    {aiSuggestions.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleApplyAiSuggestion(item.text)}
+                        className="p-2.5 rounded-xl bg-white border border-[#8C6D58]/15 hover:border-[#D98A76] hover:bg-[#FFFDF9] cursor-pointer transition-all shadow-xs group"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-[#D98A76] bg-[#E8A598]/15 px-2 py-0.5 rounded-full">
+                            {item.badge}
+                          </span>
+                          <span className="text-xs opacity-75">{item.emojis}</span>
+                        </div>
+                        <p className="font-handwriting text-base sm:text-lg text-[#3D2E28] leading-snug group-hover:text-[#D98A76] transition-colors">
+                          "{item.text}"
+                        </p>
                       </div>
-                      <p className="font-handwriting text-lg sm:text-xl text-[#3D2E28] leading-snug whitespace-pre-line">
-                        "{sug.text}"
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
 
-          {/* Khung viết cảm xúc / nhật ký chính thức */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-semibold text-[#8C6D58]">
-                Dòng nhật ký / Cảm xúc của chúng mình <span className="text-[#D98A76]">*</span>
-              </label>
-              <span className="text-[11px] text-[#8C6D58]/70">
-                {caption.length} ký tự
+            {/* Khay Emoji gợi ý */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 mb-1 text-sm no-scrollbar">
+              <span className="text-[11px] font-semibold text-[#8C6D58] flex items-center gap-1 shrink-0">
+                <Smile className="w-3 h-3 text-[#E8A598]" />
+                Emoji:
               </span>
+              {suggestedEmojis.map((em, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleAddEmojiToCaption(em)}
+                  className="px-2 py-0.5 rounded-lg bg-white border border-[#8C6D58]/15 hover:bg-[#FAF6F0] hover:scale-110 transition-all text-xs cursor-pointer shrink-0"
+                  title="Thêm emoji này vào caption"
+                >
+                  {em}
+                </button>
+              ))}
             </div>
 
             <textarea
-              rows={3}
               required
+              rows={3}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder="Viết cảm xúc của bạn hoặc bấm 'Tạo gợi ý với Gemini AI' ở trên nhé..."
-              className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden resize-none font-sans"
+              placeholder="Viết vài dòng ngọt ngào về khoảnh khắc này... (hoặc bấm nút Gemini AI ở trên để gợi ý tự động)"
+              className="w-full p-3 text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden font-handwriting text-lg sm:text-xl text-[#3D2E28]"
             />
-
-            {/* Thanh Gợi Ý Biểu Tượng Cảm Xúc (Emoji) Hợp Với Ảnh */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-1">
-              <span className="text-[11px] font-medium text-[#8C6D58] flex items-center gap-1 shrink-0">
-                <Smile className="w-3.5 h-3.5 text-[#D98A76]" />
-                <span>Gợi ý emoji hợp ảnh:</span>
-              </span>
-              <div className="flex items-center gap-1 flex-wrap">
-                {suggestedEmojis.map((emoji, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setCaption((prev) => (prev ? `${prev} ${emoji}` : emoji))}
-                    className="w-7 h-7 rounded-lg bg-white hover:bg-[#FAF6F0] border border-[#8C6D58]/15 hover:border-[#E8A598] flex items-center justify-center text-sm shadow-2xs hover:scale-110 active:scale-95 transition"
-                    title={`Chèn ${emoji} vào nhật ký`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
 
-          {/* Nút 'Lưu Kỷ Niệm' */}
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#8C6D58]/10">
+          {/* Nút hành động */}
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#8C6D58]/15">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-[#8C6D58] hover:bg-[#F9F6F0] rounded-xl transition-all"
+              className="px-4 py-2 text-xs font-semibold text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-full transition-all cursor-pointer"
             >
-              Hủy
+              Hủy bỏ
             </button>
+
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#E8A598] hover:bg-[#D98A76] text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all transform active:scale-95 disabled:opacity-50"
+              disabled={isSubmitting || isCompressing}
+              className="px-6 py-2.5 rounded-full bg-[#E8A598] hover:bg-[#D98A76] text-white font-semibold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              <Heart className="w-4 h-4 fill-white" />
-              <span>{isSubmitting ? 'Đang lưu...' : 'Lưu Kỷ Niệm'}</span>
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Đang lưu kỷ niệm...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>
+                    {images.length > 1
+                      ? uploadMode === 'album'
+                        ? `Lưu Album (${images.length} ảnh)`
+                        : `Lưu ${images.length} kỷ niệm`
+                      : 'Lưu Khoảnh Khắc Ngọt Ngào'}
+                  </span>
+                </>
+              )}
             </button>
           </div>
         </form>
