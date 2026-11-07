@@ -3,10 +3,12 @@ import {
   CoupleInfo,
   BackgroundSettings,
   MusicTrack,
+  DiaryEntry,
   DEFAULT_COUPLE_INFO,
   DEFAULT_BG_SETTINGS,
   INITIAL_MEMORIES,
-  DEFAULT_PLAYLIST
+  DEFAULT_PLAYLIST,
+  INITIAL_DIARY_ENTRIES
 } from '../types';
 import { db } from '../firebase';
 import {
@@ -22,6 +24,7 @@ const PLAYLIST_KEY = 'goc_nho_playlist';
 const MEMORIES_KEY = 'goc_nho_binh_yen_memories_v3';
 const COUPLE_KEY = 'goc_nho_binh_yen_couple_v3';
 const BG_SETTINGS_KEY = 'goc_nho_binh_yen_bg_v3';
+const DIARY_KEY = 'goc_nho_binh_yen_diary_v1';
 
 // Helper enum và xử lý lỗi theo chuẩn Firebase Skill
 export enum OperationType {
@@ -354,6 +357,80 @@ export const subscribeToSharedBgSettings = (
     },
     (error) => {
       handleFirestoreError(error, OperationType.GET, 'shared_data/background');
+    }
+  );
+
+  return unsubscribe;
+};
+
+/* =========================================================================
+   5. QUẢN LÝ SỔ TAY NHẬT KÝ VIẾT TAY (DIARY ENTRIES) - ĐỒNG BỘ CLOUD + LOCAL
+   ========================================================================= */
+
+export const getStoredDiaryEntries = (): DiaryEntry[] => {
+  try {
+    const raw = localStorage.getItem(DIARY_KEY);
+    if (!raw) return INITIAL_DIARY_ENTRIES;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_DIARY_ENTRIES;
+  } catch (err) {
+    console.warn('Lỗi đọc sổ tay từ localStorage:', err);
+    return INITIAL_DIARY_ENTRIES;
+  }
+};
+
+export const saveDiaryEntriesBoth = async (entries: DiaryEntry[]): Promise<void> => {
+  try {
+    localStorage.setItem(DIARY_KEY, JSON.stringify(entries));
+  } catch (err) {
+    console.warn('Lỗi lưu sổ tay vào localStorage:', err);
+  }
+
+  try {
+    const diaryDocRef = doc(db, 'shared_data', 'diary');
+    await setDoc(diaryDocRef, {
+      entries,
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'shared_data/diary');
+  }
+};
+
+export const subscribeToSharedDiary = (
+  onUpdate: (entries: DiaryEntry[]) => void
+): (() => void) => {
+  const diaryDocRef = doc(db, 'shared_data', 'diary');
+
+  const unsubscribe = onSnapshot(
+    diaryDocRef,
+    async (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.entries) && data.entries.length > 0) {
+          try {
+            localStorage.setItem(DIARY_KEY, JSON.stringify(data.entries));
+          } catch {}
+          onUpdate(data.entries);
+          return;
+        }
+      }
+
+      // Khởi tạo trên Cloud nếu chưa có
+      const local = getStoredDiaryEntries();
+      onUpdate(local);
+      try {
+        await setDoc(diaryDocRef, {
+          entries: local,
+          updatedAt: Date.now()
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'shared_data/diary');
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, 'shared_data/diary');
+      onUpdate(getStoredDiaryEntries());
     }
   );
 

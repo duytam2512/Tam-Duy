@@ -12,7 +12,8 @@ import { SnowEffect } from './components/SnowEffect';
 import { GooglePhotosVideoModal } from './components/GooglePhotosVideoModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PWAInstallButton } from './components/PWAInstallButton';
-import { Memory, CoupleInfo, BackgroundSettings, DEFAULT_BG_SETTINGS } from './types';
+import { HandwrittenJournalModal } from './components/HandwrittenJournalModal';
+import { Memory, CoupleInfo, BackgroundSettings, DEFAULT_BG_SETTINGS, DiaryEntry } from './types';
 import {
   getStoredMemories,
   saveMemoriesToStorage,
@@ -24,9 +25,12 @@ import {
   saveSharedMemory,
   deleteSharedMemory,
   subscribeToSharedCoupleInfo,
-  subscribeToSharedBgSettings
+  subscribeToSharedBgSettings,
+  getStoredDiaryEntries,
+  saveDiaryEntriesBoth,
+  subscribeToSharedDiary
 } from './services/storage';
-import { Heart, Plus, Sparkles, Palette } from 'lucide-react';
+import { Heart, Plus, Sparkles, Palette, Book } from 'lucide-react';
 
 export function App() {
   const [memories, setMemories] = useState<Memory[]>(getStoredMemories());
@@ -34,12 +38,14 @@ export function App() {
   const [backgroundSettings, setBackgroundSettings] = useState<BackgroundSettings>(
     getStoredBackgroundSettings()
   );
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>(getStoredDiaryEntries());
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isStandaloneOpen, setIsStandaloneOpen] = useState(false);
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
   const [isReadingModeOpen, setIsReadingModeOpen] = useState(false);
   const [isVideoMakerOpen, setIsVideoMakerOpen] = useState(false);
+  const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [isSnowing, setIsSnowing] = useState(() => {
     try {
       return localStorage.getItem('goc_nho_snow') !== 'false';
@@ -82,6 +88,12 @@ export function App() {
       }
     });
 
+    const unsubDiary = subscribeToSharedDiary((sharedEntries) => {
+      if (Array.isArray(sharedEntries)) {
+        setDiaryEntries(sharedEntries);
+      }
+    });
+
     // Lắng nghe sự kiện đồng bộ tức thì giữa các tab / cửa sổ trình duyệt trên cùng thiết bị
     const handleStorageEvent = (e: StorageEvent) => {
       if (e.key === 'goc_nho_binh_yen_memories_v3' && e.newValue) {
@@ -102,6 +114,12 @@ export function App() {
           if (parsed && parsed.type) setBackgroundSettings(parsed);
         } catch {}
       }
+      if (e.key === 'goc_nho_binh_yen_diary_v1' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setDiaryEntries(parsed);
+        } catch {}
+      }
     };
 
     window.addEventListener('storage', handleStorageEvent);
@@ -110,6 +128,7 @@ export function App() {
       unsubMemories();
       unsubCouple();
       unsubBg();
+      unsubDiary();
       window.removeEventListener('storage', handleStorageEvent);
     };
   }, []);
@@ -201,6 +220,12 @@ export function App() {
     }
   };
 
+  // Lưu danh sách trang sổ tay viết tay
+  const handleSaveDiaryEntries = async (entries: DiaryEntry[]) => {
+    setDiaryEntries(entries);
+    await saveDiaryEntriesBoth(entries);
+  };
+
   return (
     <div className="relative min-h-screen text-[#3D2E28] flex flex-col justify-between overflow-x-hidden">
       {/* 1. LỚP HÌNH NỀN TÙY BIẾN CHO GIAO DIỆN WEB */}
@@ -244,6 +269,7 @@ export function App() {
           onOpenBackgroundModal={() => setIsBackgroundModalOpen(true)}
           onOpenReadingMode={() => setIsReadingModeOpen(true)}
           onOpenVideoMaker={() => setIsVideoMakerOpen(true)}
+          onOpenHandwrittenJournal={() => setIsJournalOpen(true)}
           isSnowing={isSnowing}
           onToggleSnow={handleToggleSnow}
         />

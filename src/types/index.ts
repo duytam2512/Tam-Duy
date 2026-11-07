@@ -27,6 +27,90 @@ export interface BackgroundSettings {
 
 export type ViewMode = 'masonry' | 'timeline';
 
+export interface DiaryEntry {
+  id: string;
+  title: string;
+  content: string; // Nội dung bài viết nhật ký dài (nhiều đoạn văn)
+  date: string; // YYYY-MM-DD
+  author: string; // "Đức Duy" | "Thanh Tâm" | "Cả hai đứa"
+  mood: string; // Biểu tượng cảm xúc & tâm trạng
+  weather: string; // Thời tiết lúc viết
+  tag?: string; // "Thư tình" | "Nhật ký" | "Chuyến đi" | "Lời hứa" | "Kỷ niệm"
+  sticker?: string; // Nhãn dán trang trí: "🌸" | "💌" | "✨" | "💖" | "☕" | "🍃"
+  imageUrl?: string; // Ảnh kẹp vào trang sổ tay (tùy chọn)
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export const INITIAL_DIARY_ENTRIES: DiaryEntry[] = [
+  {
+    id: "diary-1",
+    title: "Trang đầu tiên của cuốn sổ chúng mình",
+    author: "Cả hai đứa",
+    date: "2025-05-19",
+    mood: "🥰 Ngập tràn hạnh phúc",
+    weather: "☀️ Nắng ấm dịu dàng",
+    tag: "Lời mở đầu",
+    sticker: "💌",
+    imageUrl: "https://images.unsplash.com/photo-1518199266791-5375a83190b7?auto=format&fit=crop&w=800&q=80",
+    content: `Chào mừng em đến với góc nhỏ này. Cuốn sổ tay này được mở ra không chỉ để đính những tấm ảnh rực rỡ, mà là nơi lưu giữ những suy nghĩ dài hơn, những lời tâm sự vụng về mà đôi khi ngồi trước mặt nhau anh lại ngại ngùng chẳng dám nói hết.
+
+Dù sau này năm tháng có trôi nhanh đến đâu, hy vọng mỗi khi lật từng trang giấy này, hai đứa vẫn sẽ mỉm cười nhớ về những ngày đầu dịu dàng như hôm nay. Mong rằng tình yêu của chúng mình sẽ luôn như một tách cacao ấm giữa buổi sáng se lạnh: ngọt ngào, êm dịu và tràn đầy bình yên.`,
+    createdAt: 1747612800000
+  },
+  {
+    id: "diary-2",
+    title: "Bức thư gửi em vào một chiều mưa Hà Nội",
+    author: "Đức Duy",
+    date: "2025-07-14",
+    mood: "☕ Bình yên dịu lắng",
+    weather: "🌧️ Mưa rào lách tách",
+    tag: "Thư tình",
+    sticker: "☕",
+    imageUrl: "https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?auto=format&fit=crop&w=800&q=80",
+    content: `Chiều nay trời đổ cơn mưa rào bất chợt, ngồi bên góc quán quen nhìn dòng người vội vã che ô, anh lại nhớ đến em da diết.
+
+Nhớ những lần hai đứa che chung chiếc ô nhỏ xíu, vai áo anh ướt sũng nhưng nhìn thấy em cười tít mắt thì trong lòng lại thấy ấm áp lạ kỳ. Em hỏi anh: 'Sao anh cứ đi lệch sang phía em thế?'. Ngốc ạ, vì chỉ cần em không bị ướt, thì với anh trời mưa cũng đẹp như một khúc tình ca.
+
+Cảm ơn em vì đã đến, mang theo sự ấm áp làm dịu đi những mệt mỏi trong anh. Dù ngoài kia có giông bão thế nào, chỉ cần quay về bên em là bình yên lại trở về.`,
+    createdAt: 1752451200000
+  },
+  {
+    id: "diary-3",
+    title: "Những điều nhỏ xíu làm em yêu anh",
+    author: "Thanh Tâm",
+    date: "2025-09-20",
+    mood: "💖 Ngọt ngào yêu đời",
+    weather: "⛅ Trời thu trong veo",
+    tag: "Nhật ký",
+    sticker: "🌸",
+    imageUrl: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80",
+    content: `Đôi khi tình yêu chẳng cần những điều to tát vĩ đại, mà nằm ở cốc nước ấm anh mang sang mỗi sáng, ở cái cách anh luôn đi về phía làn xe ngoài đường để bảo vệ em, hay lúc anh kiên nhẫn bóc từng con tôm để vào bát em.
+
+Em thích ngắm anh lúc tập trung làm việc, rồi bất chợt quay sang mỉm cười xoa đầu em và hỏi: 'Bé đói bụng chưa?'. Những khoảnh khắc giản dị ấy khiến em tin rằng mình đã tìm đúng người để tựa vào cả cuộc đời này.
+
+Cảm ơn anh vì đã luôn dịu dàng, kiên nhẫn và bao dung với một cô gái đôi lúc ẩm ương như em nhé!`,
+    createdAt: 1758326400000
+  },
+  {
+    id: "diary-4",
+    title: "Lời hứa cho những chuyến đi phía trước",
+    author: "Đức Duy",
+    date: "2025-11-10",
+    mood: "🍃 Háo hức & Hy vọng",
+    weather: "🍂 Gió chớm đông",
+    tag: "Lời hứa",
+    sticker: "✨",
+    imageUrl: "https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=800&q=80",
+    content: `Chúng mình đã cùng nhau đi qua những con dốc thông mù sương ở Đà Lạt, ngắm hoàng hôn đỏ ửng buông xuống mặt Hồ Tây và lắng nghe tiếng sóng vỗ rì rào ở bờ biển Quy Nhơn.
+
+Danh sách những nơi muốn đi cùng em vẫn còn rất dài: ngắm tuyết rơi đầu mùa ở vùng núi cao, đi dạo dưới tán hoa anh đào nở rộ, và cùng nhau già đi ở một ngôi nhà nhỏ có mảnh vườn đầy hoa và nắng sớm.
+
+Cứ thong thả nắm tay anh bước tiếp nhé, vì với anh, đích đến đẹp nhất luôn luôn là có em bên cạnh.`,
+    createdAt: 1762732800000
+  }
+];
+
 export const DEFAULT_COUPLE_INFO: CoupleInfo = {
   personOne: "Đức Duy",
   personTwo: "Thanh Tâm",

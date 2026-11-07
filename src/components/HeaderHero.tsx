@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen, Snowflake, Film } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen, Snowflake, Film, Book } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
 import { BrandLogo } from './BrandLogo';
@@ -15,6 +15,7 @@ interface HeaderHeroProps {
   onOpenBackgroundModal: () => void;
   onOpenReadingMode: () => void;
   onOpenVideoMaker: () => void;
+  onOpenHandwrittenJournal: () => void;
   isSnowing: boolean;
   onToggleSnow: () => void;
 }
@@ -29,6 +30,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   onOpenBackgroundModal,
   onOpenReadingMode,
   onOpenVideoMaker,
+  onOpenHandwrittenJournal,
   isSnowing,
   onToggleSnow
 }) => {
@@ -101,6 +103,16 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Nút Mở Sổ Tay Viết Tay Lật Trang */}
+          <button
+            onClick={onOpenHandwrittenJournal}
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-amber-700 via-amber-800 to-[#5E4233] hover:opacity-95 px-3.5 py-1.5 rounded-full shadow-md transition-all active:scale-95 cursor-pointer border border-amber-500/40"
+            title="Mở cuốn sổ tay viết tay có thể lật trang, viết thư tình và ghi chú dài"
+          >
+            <Book className="w-3.5 h-3.5 text-amber-200" />
+            <span>Sổ Tay Kỷ Niệm</span>
+          </button>
+
           {/* Nút Tạo Video Kỷ Niệm Ghép Ảnh Chuẩn Google Photos */}
           <button
             onClick={onOpenVideoMaker}
@@ -258,10 +270,19 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
         <div className="flex flex-wrap items-center justify-center gap-3 mt-6 pt-5 border-t border-[#8C6D58]/10">
           <button
             onClick={onOpenQuickUpload}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#E8A598] hover:bg-[#D98A76] text-white font-medium text-sm shadow-md hover:shadow-lg transition-all transform active:scale-95"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#E8A598] hover:bg-[#D98A76] text-white font-medium text-sm shadow-md hover:shadow-lg transition-all transform active:scale-95 cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
             <span>+ Đăng Kỷ Niệm Mới</span>
+          </button>
+
+          <button
+            onClick={onOpenHandwrittenJournal}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#5E4233] hover:bg-[#432F24] text-amber-100 font-medium text-sm shadow-md hover:shadow-lg transition-all transform active:scale-95 border border-amber-600/30 cursor-pointer"
+            title="Mở cuốn sổ tay viết tay có thể lật trang, viết thư tình và ghi chú dài"
+          >
+            <Book className="w-4 h-4 text-amber-300" />
+            <span>Mở Sổ Tay Kỷ Niệm</span>
           </button>
 
           <button
