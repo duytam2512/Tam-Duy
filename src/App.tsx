@@ -14,14 +14,19 @@ import {
   getStoredMemories,
   saveMemoriesToStorage,
   getStoredCoupleInfo,
-  saveCoupleInfoToStorage,
+  saveCoupleInfoBoth,
   getStoredBackgroundSettings,
-  saveBackgroundSettingsToStorage
+  saveBackgroundSettingsBoth,
+  subscribeToSharedMemories,
+  saveSharedMemory,
+  deleteSharedMemory,
+  subscribeToSharedCoupleInfo,
+  subscribeToSharedBgSettings
 } from './services/storage';
 import { Heart, Plus, Sparkles, Palette } from 'lucide-react';
 
 export function App() {
-  const [memories, setMemories] = useState<Memory[]>([]);
+  const [memories, setMemories] = useState<Memory[]>(getStoredMemories());
   const [coupleInfo, setCoupleInfo] = useState<CoupleInfo>(getStoredCoupleInfo());
   const [backgroundSettings, setBackgroundSettings] = useState<BackgroundSettings>(
     getStoredBackgroundSettings()
@@ -53,17 +58,38 @@ export function App() {
     });
   };
 
-  // Khởi tạo memories từ LocalStorage
+  // Đồng bộ thời gian thực từ Cloud Firestore (hoạt động trên cả Laptop, Cốc Cốc, Điện thoại, v.v.)
   useEffect(() => {
-    const loaded = getStoredMemories();
-    setMemories(loaded);
+    const unsubMemories = subscribeToSharedMemories((sharedMemories) => {
+      if (sharedMemories && sharedMemories.length > 0) {
+        setMemories(sharedMemories);
+      }
+    });
+
+    const unsubCouple = subscribeToSharedCoupleInfo((sharedCouple) => {
+      if (sharedCouple) {
+        setCoupleInfo(sharedCouple);
+      }
+    });
+
+    const unsubBg = subscribeToSharedBgSettings((sharedBg) => {
+      if (sharedBg) {
+        setBackgroundSettings(sharedBg);
+      }
+    });
+
+    return () => {
+      unsubMemories();
+      unsubCouple();
+      unsubBg();
+    };
   }, []);
 
   // Tổng số lượt yêu thích
   const totalLikes = memories.reduce((acc, curr) => acc + (curr.likes || 0), 0);
 
-  // Thêm kỷ niệm mới
-  const handleAddMemory = (newMemData: Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>) => {
+  // Thêm kỷ niệm mới (Lưu cả LocalStorage và Cloud Firestore)
+  const handleAddMemory = async (newMemData: Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>) => {
     const newMemory: Memory = {
       ...newMemData,
       id: `mem-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -75,42 +101,50 @@ export function App() {
     const updated = [newMemory, ...memories];
     setMemories(updated);
     saveMemoriesToStorage(updated);
+    await saveSharedMemory(newMemory);
   };
 
   // Thả tim kỷ niệm
-  const handleToggleLike = (id: string) => {
+  const handleToggleLike = async (id: string) => {
+    let targetMem: Memory | null = null;
     const updated = memories.map((m) => {
       if (m.id === id) {
         const isLiked = !m.isLiked;
         const likes = isLiked ? (m.likes || 0) + 1 : Math.max(0, (m.likes || 0) - 1);
-        return { ...m, isLiked, likes };
+        targetMem = { ...m, isLiked, likes };
+        return targetMem;
       }
       return m;
     });
+
     setMemories(updated);
     saveMemoriesToStorage(updated);
+    if (targetMem) {
+      await saveSharedMemory(targetMem);
+    }
   };
 
   // Xóa kỷ niệm
-  const handleDeleteMemory = (id: string) => {
+  const handleDeleteMemory = async (id: string) => {
     const updated = memories.filter((m) => m.id !== id);
     setMemories(updated);
     saveMemoriesToStorage(updated);
+    await deleteSharedMemory(id);
     if (selectedLightboxIndex !== null) {
       setSelectedLightboxIndex(null);
     }
   };
 
   // Cập nhật thông tin cặp đôi
-  const handleUpdateCoupleInfo = (info: CoupleInfo) => {
+  const handleUpdateCoupleInfo = async (info: CoupleInfo) => {
     setCoupleInfo(info);
-    saveCoupleInfoToStorage(info);
+    await saveCoupleInfoBoth(info);
   };
 
   // Cập nhật cài đặt hình nền
-  const handleUpdateBackground = (newSettings: BackgroundSettings) => {
+  const handleUpdateBackground = async (newSettings: BackgroundSettings) => {
     setBackgroundSettings(newSettings);
-    saveBackgroundSettingsToStorage(newSettings);
+    await saveBackgroundSettingsBoth(newSettings);
   };
 
   // Điều hướng xem ảnh phóng to

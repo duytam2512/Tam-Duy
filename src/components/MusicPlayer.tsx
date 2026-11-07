@@ -18,10 +18,18 @@ import {
   Link2,
   Search,
   Youtube,
-  Info
+  Info,
+  Cloud,
+  CheckCircle2,
+  RefreshCw
 } from 'lucide-react';
 import { MusicTrack, DEFAULT_PLAYLIST } from '../types';
 import { extractYouTubeId, getYouTubeVideoInfoClient } from '../utils/youtube';
+import {
+  getStoredPlaylist,
+  savePlaylistBoth,
+  subscribeToSharedPlaylist
+} from '../services/storage';
 
 declare global {
   interface Window {
@@ -55,14 +63,8 @@ const YOUTUBE_PRESETS = [
 ];
 
 export const MusicPlayer: React.FC = () => {
-  const [playlist, setPlaylist] = useState<MusicTrack[]>(() => {
-    try {
-      const stored = localStorage.getItem('goc_nho_playlist');
-      return stored ? JSON.parse(stored) : DEFAULT_PLAYLIST;
-    } catch {
-      return DEFAULT_PLAYLIST;
-    }
-  });
+  const [playlist, setPlaylist] = useState<MusicTrack[]>(() => getStoredPlaylist());
+  const [isCloudSynced, setIsCloudSynced] = useState(false);
 
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -76,8 +78,8 @@ export const MusicPlayer: React.FC = () => {
   const [trackToDelete, setTrackToDelete] = useState<{ id: string; title: string } | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  // Tab thêm nhạc: YouTube | Zing MP3 | Thủ công
-  const [activeAddTab, setActiveAddTab] = useState<'youtube' | 'zing' | 'manual'>('youtube');
+  // Tab thêm nhạc: YouTube | MP3 thủ công | Zing MP3
+  const [activeAddTab, setActiveAddTab] = useState<'youtube' | 'manual' | 'zing'>('youtube');
 
   // YouTube Music state
   const [youtubeInput, setYoutubeInput] = useState('');
@@ -98,7 +100,20 @@ export const MusicPlayer: React.FC = () => {
 
   const currentTrack = playlist[currentTrackIndex] || playlist[0];
 
-  // Khởi tạo YouTube IFrame API
+  // 1. TỰ ĐỘNG ĐỒNG BỘ PLAYLIST THỜI GIAN THỰC TỪ CLOUD FIRESTORE
+  // Giúp bài hát thêm trên Cốc Cốc laptop ngay lập tức xuất hiện trên điện thoại & nền tảng khác
+  useEffect(() => {
+    const unsubscribe = subscribeToSharedPlaylist((sharedTracks) => {
+      if (sharedTracks && sharedTracks.length > 0) {
+        setPlaylist(sharedTracks);
+        setIsCloudSynced(true);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 2. KHỞI TẠO YOUTUBE IFRAME API
   useEffect(() => {
     const initYT = () => {
       if (window.YT && window.YT.Player) {
@@ -172,12 +187,10 @@ export const MusicPlayer: React.FC = () => {
     if (!currentTrack) return;
 
     if (currentTrack.isYouTube && currentTrack.youtubeId) {
-      // Dừng audio thường nếu đang phát
       if (audioRef.current) {
         audioRef.current.pause();
       }
 
-      // Phát trên YouTube Player
       if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
         try {
           if (isPlaying) {
@@ -190,7 +203,6 @@ export const MusicPlayer: React.FC = () => {
         }
       }
     } else {
-      // Dừng YouTube nếu đang phát
       if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
         try {
           ytPlayerRef.current.pauseVideo();
@@ -199,7 +211,6 @@ export const MusicPlayer: React.FC = () => {
         }
       }
 
-      // Phát trên HTML5 Audio
       if (audioRef.current) {
         audioRef.current.src = currentTrack.url;
         if (isPlaying) {
@@ -257,8 +268,17 @@ export const MusicPlayer: React.FC = () => {
     setShowPlaylistModal(false);
   };
 
-  // Thêm nhạc từ link MP3 thủ công (hoạt động 100% trên Vercel)
-  const handleAddCustomTrack = (e: React.FormEvent) => {
+  // Nút bấm đồng bộ thủ công danh sách bài hát lên Cloud
+  const handleForceSyncCloud = async () => {
+    setIsCloudSynced(false);
+    await savePlaylistBoth(playlist);
+    setIsCloudSynced(true);
+    setToastMessage('☁️ Đã đồng bộ bài hát lên Cloud! Điện thoại và máy tính khác đều đã lưu.');
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Thêm nhạc từ link MP3 thủ công
+  const handleAddCustomTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customTitle.trim() || !customUrl.trim()) return;
 
@@ -272,24 +292,20 @@ export const MusicPlayer: React.FC = () => {
 
     const updated = [...playlist, newTrack];
     setPlaylist(updated);
-    try {
-      localStorage.setItem('goc_nho_playlist', JSON.stringify(updated));
-    } catch (err) {
-      console.error('Lỗi lưu playlist:', err);
-    }
+    await savePlaylistBoth(updated);
 
     setCustomTitle('');
     setCustomUrl('');
     setCurrentTrackIndex(updated.length - 1);
     setIsPlaying(true);
-    setToastMessage(`Đã thêm bài hát "${newTrack.title}" vào danh sách phát!`);
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(`☁️ Đã thêm "${newTrack.title}" và đồng bộ lên tất cả thiết bị!`);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   /**
    * Thêm nhạc từ YouTube
    * Hoạt động 100% trên cả Vercel tĩnh, Localhost và mọi môi trường
-   * Tự động giải mã client-side nếu máy chủ serverless không có sẵn
+   * Tự động giải mã client-side và đồng bộ lên Cloud Firestore
    */
   const handleAddYouTubeTrack = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -297,7 +313,7 @@ export const MusicPlayer: React.FC = () => {
     if (!query) return;
 
     setIsYoutubeLoading(true);
-    setToastMessage('Đang xử lý và nạp bài hát YouTube...');
+    setToastMessage('Đang xử lý và đồng bộ bài hát lên Cloud...');
 
     try {
       let resolvedSong: MusicTrack | null = null;
@@ -325,7 +341,6 @@ export const MusicPlayer: React.FC = () => {
       if (!resolvedSong) {
         let videoId = extractedVideoId;
 
-        // Nếu người dùng không dán link mà gõ tên bài, kiểm tra danh sách bài mẫu
         if (!videoId) {
           const matchedPreset = YOUTUBE_PRESETS.find(
             (p) => p.name.toLowerCase().includes(query.toLowerCase()) || query.toLowerCase().includes(p.name.toLowerCase())
@@ -373,24 +388,20 @@ export const MusicPlayer: React.FC = () => {
       }
 
       setPlaylist(updatedPlaylist);
-      try {
-        localStorage.setItem('goc_nho_playlist', JSON.stringify(updatedPlaylist));
-      } catch (err) {
-        console.error('Lỗi lưu playlist sau khi thêm bài từ YouTube:', err);
-      }
+      // Lưu vào cả LocalStorage và Cloud Firestore để mọi thiết bị đều có
+      await savePlaylistBoth(updatedPlaylist);
 
       setYoutubeInput('');
       setYoutubeCustomTitle('');
       setCurrentTrackIndex(targetIdx);
       setIsPlaying(true);
 
-      // Nạp và phát luôn trên YouTube Player
       if (newSong.youtubeId && ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
         if (audioRef.current) audioRef.current.pause();
         ytPlayerRef.current.loadVideoById(newSong.youtubeId);
       }
 
-      setToastMessage(`🎉 Đã thêm bài hát YouTube "${newSong.title}" thành công!`);
+      setToastMessage(`🎉 Đã thêm "${newSong.title}" & đồng bộ trên mọi thiết bị!`);
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err: any) {
       console.error('Lỗi thêm nhạc YouTube:', err);
@@ -401,7 +412,7 @@ export const MusicPlayer: React.FC = () => {
     }
   };
 
-  // Tải nhạc từ Zing MP3 (có kiểm tra an toàn cho Vercel)
+  // Tải nhạc từ Zing MP3
   const handleDownloadFromZing = async (e: React.FormEvent) => {
     e.preventDefault();
     const query = zingInput.trim();
@@ -419,7 +430,7 @@ export const MusicPlayer: React.FC = () => {
 
       const contentType = response.headers.get('content-type') || '';
       if (!response.ok || !contentType.includes('application/json')) {
-        throw new Error('Tính năng Zing MP3 yêu cầu máy chủ Node.js. Trên web Vercel tĩnh, bạn hãy dùng tab "Link YouTube" hoặc "MP3 thủ công" để thêm nhạc mượt mà nhé!');
+        throw new Error('Tính năng Zing MP3 yêu cầu máy chủ Node.js. Trên web Vercel tĩnh, bạn hãy dùng tab "Link YouTube" hoặc "Link MP3" để lưu vĩnh viễn nhé!');
       }
 
       const data = await response.json();
@@ -442,11 +453,7 @@ export const MusicPlayer: React.FC = () => {
       }
 
       setPlaylist(updatedPlaylist);
-      try {
-        localStorage.setItem('goc_nho_playlist', JSON.stringify(updatedPlaylist));
-      } catch (err) {
-        console.error('Lỗi lưu playlist sau khi tải Zing MP3:', err);
-      }
+      await savePlaylistBoth(updatedPlaylist);
 
       setZingInput('');
       setCurrentTrackIndex(targetIdx);
@@ -461,7 +468,7 @@ export const MusicPlayer: React.FC = () => {
         audioRef.current.play().catch(() => setIsPlaying(false));
       }
 
-      setToastMessage(`🎉 Đã tải thành công "${newSong.title}" - ${newSong.artist} về bài của tôi!`);
+      setToastMessage(`🎉 Đã tải "${newSong.title}" & đồng bộ trên mọi thiết bị!`);
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err: any) {
       console.error('Lỗi tải Zing MP3:', err);
@@ -486,7 +493,7 @@ export const MusicPlayer: React.FC = () => {
   };
 
   // Thực hiện xóa bài hát sau khi người dùng bấm xác nhận
-  const confirmDeleteTrack = () => {
+  const confirmDeleteTrack = async () => {
     if (!trackToDelete) return;
 
     const { id: trackId, title: trackTitle } = trackToDelete;
@@ -498,12 +505,7 @@ export const MusicPlayer: React.FC = () => {
 
     const updated = playlist.filter((t) => t.id !== trackId);
     setPlaylist(updated);
-
-    try {
-      localStorage.setItem('goc_nho_playlist', JSON.stringify(updated));
-    } catch (err) {
-      console.error('Lỗi lưu playlist sau khi xóa:', err);
-    }
+    await savePlaylistBoth(updated);
 
     // Nếu bài đang phát bị xóa
     if (trackIndex === currentTrackIndex) {
@@ -535,18 +537,14 @@ export const MusicPlayer: React.FC = () => {
     }
 
     setTrackToDelete(null);
-    setToastMessage(`🗑️ Đã xóa bài hát "${trackTitle}" thành công!`);
+    setToastMessage(`🗑️ Đã xóa "${trackTitle}" và đồng bộ trên mọi thiết bị!`);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
   // Thực hiện khôi phục 6 bài hát gốc ban đầu
-  const confirmResetPlaylist = () => {
+  const confirmResetPlaylist = async () => {
     setPlaylist(DEFAULT_PLAYLIST);
-    try {
-      localStorage.setItem('goc_nho_playlist', JSON.stringify(DEFAULT_PLAYLIST));
-    } catch (err) {
-      console.error('Lỗi khôi phục playlist:', err);
-    }
+    await savePlaylistBoth(DEFAULT_PLAYLIST);
 
     if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
       ytPlayerRef.current.pauseVideo();
@@ -561,7 +559,7 @@ export const MusicPlayer: React.FC = () => {
     }
 
     setShowResetConfirm(false);
-    setToastMessage('✨ Đã khôi phục 6 bài hát gốc mặc định!');
+    setToastMessage('✨ Đã khôi phục 6 bài hát gốc trên mọi thiết bị!');
     setTimeout(() => setToastMessage(null), 3000);
   };
 
@@ -594,7 +592,7 @@ export const MusicPlayer: React.FC = () => {
         <div className="bg-[#FFFDF9]/95 backdrop-blur-md rounded-2xl border border-[#8C6D58]/20 shadow-xl transition-all duration-300 overflow-hidden">
           {/* Thanh Player Compact */}
           <div className="p-2 sm:p-2.5 flex items-center gap-2.5">
-            {/* Đĩa than quay khi phát nhạc (hiển thị ảnh bìa nếu có) */}
+            {/* Đĩa than quay khi phát nhạc */}
             <button
               onClick={togglePlay}
               className="relative w-10 h-10 rounded-full bg-[#3D2E28] flex items-center justify-center shrink-0 shadow-md group cursor-pointer overflow-hidden border border-[#C87D55]/30"
@@ -684,10 +682,13 @@ export const MusicPlayer: React.FC = () => {
 
               <button
                 onClick={() => setShowPlaylistModal(true)}
-                className="p-1 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-lg transition-all cursor-pointer"
+                className="p-1 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-lg transition-all cursor-pointer relative"
                 title="Danh sách bài hát"
               >
                 <ListMusic className="w-3.5 h-3.5 text-[#D98A76]" />
+                {isCloudSynced && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white" />
+                )}
               </button>
             </div>
           </div>
@@ -744,12 +745,28 @@ export const MusicPlayer: React.FC = () => {
                 </button>
               </div>
 
-              <h3 className="font-serif-romantic text-2xl font-bold text-[#3D2E28]">
-                Chọn Nhạc Nền Góc Nhỏ
-              </h3>
-              <p className="text-xs text-[#8C6D58] mb-3">
-                Thêm nhạc yêu thích từ link YouTube hoặc link file MP3 của hai đứa
-              </p>
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <h3 className="font-serif-romantic text-2xl font-bold text-[#3D2E28]">
+                  Giai Điệu Của Hai Đứa
+                </h3>
+              </div>
+
+              {/* Huy hiệu đồng bộ Cloud thời gian thực */}
+              <div className="flex items-center justify-between gap-2 mb-3 pt-0.5">
+                <div className="inline-flex items-center gap-1.5 text-[11px] text-emerald-800 bg-emerald-50/90 border border-emerald-200/80 px-2.5 py-1 rounded-full font-medium">
+                  <Cloud className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Đồng bộ tự động mọi thiết bị (Laptop, Điện thoại)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleForceSyncCloud}
+                  className="text-[11px] text-[#D98A76] hover:text-[#C87D55] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                  title="Nhấn để đẩy bài hát lên Cloud ngay lập tức"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Đồng bộ ngay</span>
+                </button>
+              </div>
 
               {/* Thông báo thao tác (Toast) */}
               {toastMessage && (
@@ -761,7 +778,7 @@ export const MusicPlayer: React.FC = () => {
             </div>
 
             {/* Danh sách các bài hát có thể chọn */}
-            <div className="space-y-1.5 overflow-y-auto max-h-[32vh] pr-1 py-1">
+            <div className="space-y-1.5 overflow-y-auto max-h-[30vh] pr-1 py-1">
               {playlist.map((track, idx) => {
                 const isSelected = idx === currentTrackIndex;
                 const isCustom = track.id.startsWith('custom-');
@@ -855,7 +872,10 @@ export const MusicPlayer: React.FC = () => {
 
             {/* Thanh điều khiển phụ: Đếm bài hát & Khôi phục danh sách gốc */}
             <div className="flex items-center justify-between text-[11px] text-[#8C6D58] px-1 pt-2 pb-1 border-b border-[#8C6D58]/10">
-              <span>Đang có <strong className="text-[#3D2E28]">{playlist.length}</strong> bài hát</span>
+              <span className="flex items-center gap-1">
+                <span>Đang có <strong className="text-[#3D2E28]">{playlist.length}</strong> bài hát</span>
+                <span title="Đã lưu vào bộ nhớ đám mây"><CheckCircle2 className="w-3 h-3 text-emerald-600" /></span>
+              </span>
               <button
                 type="button"
                 onClick={() => setShowResetConfirm(true)}
@@ -880,7 +900,7 @@ export const MusicPlayer: React.FC = () => {
                   }`}
                 >
                   <Youtube className="w-3.5 h-3.5" />
-                  <span>Link YouTube (Khuyên dùng)</span>
+                  <span>Link YouTube (Lưu đám mây)</span>
                 </button>
                 <button
                   type="button"
@@ -909,14 +929,14 @@ export const MusicPlayer: React.FC = () => {
               </div>
 
               {activeAddTab === 'youtube' ? (
-                /* TAB 1: THÊM NHẠC TỪ LINK YOUTUBE (HOẠT ĐỘNG 100% TRÊN VERCEL) */
+                /* TAB 1: THÊM NHẠC TỪ LINK YOUTUBE (ĐỒNG BỘ 100% TRÊN VERCEL VÀ MỌI NỀN TẢNG) */
                 <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-red-200">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-semibold text-[#3D2E28] flex items-center gap-1">
                       <Youtube className="w-3.5 h-3.5 text-red-600" />
                       <span>Dán link YouTube bất kỳ:</span>
                     </span>
-                    <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded-sm">Hoạt động tốt trên Vercel</span>
+                    <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded-sm">Lưu trên mọi thiết bị</span>
                   </div>
 
                   <form onSubmit={handleAddYouTubeTrack} className="space-y-2">
@@ -939,7 +959,7 @@ export const MusicPlayer: React.FC = () => {
                         {isYoutubeLoading ? (
                           <>
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Đang nạp...</span>
+                            <span>Đang lưu...</span>
                           </>
                         ) : (
                           <>
@@ -979,14 +999,14 @@ export const MusicPlayer: React.FC = () => {
                   </form>
                 </div>
               ) : activeAddTab === 'manual' ? (
-                /* TAB 2: NHẬP LINK MP3 TRỰC TIẾP (HOẠT ĐỘNG 100% TRÊN VERCEL) */
+                /* TAB 2: NHẬP LINK MP3 TRỰC TIẾP */
                 <form onSubmit={handleAddCustomTrack} className="space-y-2 bg-[#FAF7F2] p-3 rounded-2xl border border-[#8C6D58]/15">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[11px] font-semibold text-[#3D2E28] flex items-center gap-1">
                       <Link2 className="w-3.5 h-3.5 text-[#D98A76]" />
                       <span>Thêm link file nhạc (.mp3 / .ogg / stream):</span>
                     </span>
-                    <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded-sm">Mọi web tĩnh</span>
+                    <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded-sm">Lưu trên mọi thiết bị</span>
                   </div>
                   <input
                     type="text"
@@ -1056,14 +1076,14 @@ export const MusicPlayer: React.FC = () => {
 
                     <div className="flex items-start gap-1 text-[10px] text-[#8C6D58] bg-[#F9F6F0] p-1.5 rounded-lg border border-[#8C6D58]/10">
                       <Info className="w-3.5 h-3.5 shrink-0 text-[#D98A76] mt-0.5" />
-                      <span>Trên Vercel bản tĩnh không có máy chủ, bạn nên dùng tab <strong>Link YouTube</strong> hoặc <strong>Link MP3 trực tiếp</strong> nhé!</span>
+                      <span>Để bài hát tự động đồng bộ sang điện thoại, bạn nên dùng tab <strong>Link YouTube</strong> hoặc <strong>Link MP3 trực tiếp</strong> nhé!</span>
                     </div>
                   </form>
                 </div>
               )}
             </div>
 
-            {/* HỘP THOẠI XÁC NHẬN XÓA BÀI HÁT (IN-APP DIALOG - KHÔNG BỊ TRÌNH DUYỆT / IFRAME CHẶN) */}
+            {/* HỘP THOẠI XÁC NHẬN XÓA BÀI HÁT */}
             {trackToDelete && (
               <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 rounded-3xl animate-fadeIn">
                 <div className="bg-[#FFFDF9] rounded-2xl p-5 border border-[#8C6D58]/20 shadow-2xl max-w-xs w-full text-center space-y-3">
@@ -1075,7 +1095,7 @@ export const MusicPlayer: React.FC = () => {
                       Xác nhận xóa bài hát?
                     </h4>
                     <p className="text-xs text-[#8C6D58] mt-1 line-clamp-2">
-                      Bạn có chắc muốn xóa <strong className="text-[#3D2E28]">"{trackToDelete.title}"</strong> khỏi danh sách bài của hai bạn không?
+                      Bạn có chắc muốn xóa <strong className="text-[#3D2E28]">"{trackToDelete.title}"</strong> khỏi danh sách bài của hai bạn trên tất cả thiết bị không?
                     </p>
                   </div>
                   <div className="flex gap-2 pt-1">
@@ -1110,7 +1130,7 @@ export const MusicPlayer: React.FC = () => {
                       Khôi phục bài hát gốc?
                     </h4>
                     <p className="text-xs text-[#8C6D58] mt-1">
-                      Danh sách sẽ được đặt lại về 6 giai điệu lãng mạn mặc định ban đầu của Góc Nhỏ Bình Yên.
+                      Danh sách sẽ được đặt lại về 6 giai điệu lãng mạn mặc định ban đầu trên tất cả các máy.
                     </p>
                   </div>
                   <div className="flex gap-2 pt-1">

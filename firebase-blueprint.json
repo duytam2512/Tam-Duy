@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "MusicPlaylist": {
+      "title": "MusicPlaylist",
+      "description": "Danh sách bài hát được đồng bộ giữa hai bạn trên mọi thiết bị",
+      "type": "object",
+      "properties": {
+        "tracks": {
+          "type": "array",
+          "description": "Danh sách các bài hát trong playlist"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Thời gian cập nhật gần nhất"
+        }
+      },
+      "required": ["tracks", "updatedAt"]
+    },
+    "Memory": {
+      "title": "Memory",
+      "description": "Khoảnh khắc kỷ niệm tình yêu của hai bạn",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Mã định danh kỷ niệm"
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Đường dẫn ảnh hoặc base64 của kỷ niệm"
+        },
+        "date": {
+          "type": "string",
+          "description": "Ngày kỷ niệm (YYYY-MM-DD)"
+        },
+        "location": {
+          "type": "string",
+          "description": "Địa điểm diễn ra kỷ niệm"
+        },
+        "caption": {
+          "type": "string",
+          "description": "Dòng nhật ký hoặc caption"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Thể loại kỷ niệm"
+        },
+        "likes": {
+          "type": "number",
+          "description": "Số lượt yêu thích"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Thời gian tạo kỷ niệm"
+        }
+      },
+      "required": ["id", "imageUrl", "date", "caption", "createdAt"]
+    },
+    "CoupleConfig": {
+      "title": "CoupleConfig",
+      "description": "Cấu hình tên cặp đôi, ngày bắt đầu yêu và hình nền",
+      "type": "object",
+      "properties": {
+        "personOne": {
+          "type": "string",
+          "description": "Tên bạn nam"
+        },
+        "personTwo": {
+          "type": "string",
+          "description": "Tên bạn nữ"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Ngày bắt đầu yêu nhau (YYYY-MM-DD)"
+        },
+        "anniversaryNote": {
+          "type": "string",
+          "description": "Lời nhắn kỷ niệm"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Thời gian cập nhật"
+        }
+      },
+      "required": ["personOne", "personTwo", "startDate"]
+    }
+  },
+  "firestore": {
+    "/shared_data/playlist": {
+      "schema": {
+        "$ref": "#/entities/MusicPlaylist"
+      },
+      "description": "Tài liệu lưu danh sách nhạc dùng chung đồng bộ trên mọi thiết bị"
+    },
+    "/shared_data/couple": {
+      "schema": {
+        "$ref": "#/entities/CoupleConfig"
+      },
+      "description": "Tài liệu lưu thông tin hai người và ngày bắt đầu yêu"
+    },
+    "/memories/{memoryId}": {
+      "schema": {
+        "$ref": "#/entities/Memory"
+      },
+      "description": "Bộ sưu tập các kỷ niệm tình yêu của hai đứa"
+    }
+  }
+}

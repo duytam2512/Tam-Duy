@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net - Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper kiểm tra mã ID hợp lệ
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Collection lưu dữ liệu dùng chung (playlist, couple info, background)
+    match /shared_data/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update: if isValidId(docId);
+      allow delete: if false;
+    }
+
+    // Collection lưu album ảnh và nhật ký kỷ niệm
+    match /memories/{memoryId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(memoryId);
+    }
+  }
+}

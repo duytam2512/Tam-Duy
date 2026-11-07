@@ -2,14 +2,133 @@ import {
   Memory,
   CoupleInfo,
   BackgroundSettings,
+  MusicTrack,
   DEFAULT_COUPLE_INFO,
   DEFAULT_BG_SETTINGS,
-  INITIAL_MEMORIES
+  INITIAL_MEMORIES,
+  DEFAULT_PLAYLIST
 } from '../types';
+import { db } from '../firebase';
+import {
+  doc,
+  collection,
+  onSnapshot,
+  setDoc,
+  deleteDoc,
+  getDoc
+} from 'firebase/firestore';
 
+const PLAYLIST_KEY = 'goc_nho_playlist';
 const MEMORIES_KEY = 'goc_nho_binh_yen_memories_v3';
 const COUPLE_KEY = 'goc_nho_binh_yen_couple_v3';
 const BG_SETTINGS_KEY = 'goc_nho_binh_yen_bg_v3';
+
+// Helper enum và xử lý lỗi theo chuẩn Firebase Skill
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  console.warn(`[Firestore ${operationType} on ${path}]:`, error);
+}
+
+/* =========================================================================
+   1. QUẢN LÝ DANH SÁCH NHẠC (PLAYLIST) - ĐỒNG BỘ CLOUD FIRESTORE + LOCALSTORAGE
+   ========================================================================= */
+
+export const getStoredPlaylist = (): MusicTrack[] => {
+  try {
+    const raw = localStorage.getItem(PLAYLIST_KEY);
+    if (!raw) return DEFAULT_PLAYLIST;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PLAYLIST;
+  } catch (err) {
+    console.error('Lỗi đọc playlist từ localStorage:', err);
+    return DEFAULT_PLAYLIST;
+  }
+};
+
+/**
+ * Lưu danh sách phát đồng bộ lên cả Cloud Firestore và LocalStorage
+ * Bất kỳ bài hát nào được thêm trên Cốc Cốc laptop sẽ ngay lập tức xuất hiện
+ * trên điện thoại, máy tính bảng và mọi trình duyệt khác khi truy cập web!
+ */
+export const savePlaylistBoth = async (playlist: MusicTrack[]): Promise<void> => {
+  // 1. Lưu ngay vào localStorage của thiết bị hiện tại
+  try {
+    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(playlist));
+  } catch (err) {
+    console.error('Lỗi lưu playlist vào localStorage:', err);
+  }
+
+  // 2. Đồng bộ lên Firestore để các thiết bị khác nhận được ngay lập tức
+  try {
+    const playlistDocRef = doc(db, 'shared_data', 'playlist');
+    await setDoc(playlistDocRef, {
+      tracks: playlist,
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'shared_data/playlist');
+  }
+};
+
+/**
+ * Lắng nghe thay đổi danh sách bài hát từ Cloud Firestore trong thời gian thực
+ */
+export const subscribeToSharedPlaylist = (
+  onUpdate: (playlist: MusicTrack[]) => void
+): (() => void) => {
+  const playlistDocRef = doc(db, 'shared_data', 'playlist');
+
+  const unsubscribe = onSnapshot(
+    playlistDocRef,
+    async (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+          // Cập nhật localStorage để lưu offline
+          try {
+            localStorage.setItem(PLAYLIST_KEY, JSON.stringify(data.tracks));
+          } catch (e) {
+            console.error(e);
+          }
+          onUpdate(data.tracks);
+          return;
+        }
+      }
+
+      // Nếu tài liệu trên Cloud chưa có hoặc rỗng, đồng bộ từ local lên cloud nếu có bài
+      try {
+        const localPlaylist = getStoredPlaylist();
+        if (localPlaylist && localPlaylist.length > 0) {
+          await setDoc(playlistDocRef, {
+            tracks: localPlaylist,
+            updatedAt: Date.now()
+          });
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'shared_data/playlist');
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, 'shared_data/playlist');
+      // Khi offline hoặc lỗi mạng, dùng dữ liệu từ localStorage
+      onUpdate(getStoredPlaylist());
+    }
+  );
+
+  return unsubscribe;
+};
+
+/* =========================================================================
+   2. QUẢN LÝ KỶ NIỆM (MEMORIES) - ĐỒNG BỘ CLOUD + LOCALSTORAGE
+   ========================================================================= */
 
 export const getStoredMemories = (): Memory[] => {
   try {
@@ -34,6 +153,78 @@ export const saveMemoriesToStorage = (memories: Memory[]): void => {
   }
 };
 
+/**
+ * Lắng nghe toàn bộ kỷ niệm từ Cloud Firestore theo thời gian thực
+ */
+export const subscribeToSharedMemories = (
+  onUpdate: (memories: Memory[]) => void
+): (() => void) => {
+  const memoriesColRef = collection(db, 'memories');
+
+  const unsubscribe = onSnapshot(
+    memoriesColRef,
+    async (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: Memory[] = [];
+        snapshot.forEach((docSnap) => {
+          const item = docSnap.data() as Memory;
+          if (item && item.id) {
+            loaded.push(item);
+          }
+        });
+
+        // Sắp xếp kỷ niệm mới nhất lên đầu
+        loaded.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+        saveMemoriesToStorage(loaded);
+        onUpdate(loaded);
+        return;
+      }
+
+      // Nếu trên Cloud chưa có dữ liệu nào, khởi tạo bằng các kỷ niệm mẫu ban đầu
+      const local = getStoredMemories();
+      onUpdate(local);
+
+      try {
+        const initialBatch = local.slice(0, 12);
+        for (const mem of initialBatch) {
+          await setDoc(doc(db, 'memories', mem.id), mem);
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'memories');
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'memories');
+      onUpdate(getStoredMemories());
+    }
+  );
+
+  return unsubscribe;
+};
+
+export const saveSharedMemory = async (memory: Memory): Promise<void> => {
+  try {
+    const memDocRef = doc(db, 'memories', memory.id);
+    await setDoc(memDocRef, memory);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `memories/${memory.id}`);
+  }
+};
+
+export const deleteSharedMemory = async (id: string): Promise<void> => {
+  try {
+    const memDocRef = doc(db, 'memories', id);
+    await deleteDoc(memDocRef);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `memories/${id}`);
+  }
+};
+
+/* =========================================================================
+   3. QUẢN LÝ THÔNG TIN CẶP ĐÔI (COUPLE INFO)
+   ========================================================================= */
+
 export const getStoredCoupleInfo = (): CoupleInfo => {
   try {
     const raw = localStorage.getItem(COUPLE_KEY);
@@ -48,13 +239,70 @@ export const getStoredCoupleInfo = (): CoupleInfo => {
   }
 };
 
-export const saveCoupleInfoToStorage = (info: CoupleInfo): void => {
+export const saveCoupleInfoBoth = async (info: CoupleInfo): Promise<void> => {
   try {
     localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
   } catch (error) {
     console.error('Lỗi khi lưu couple info:', error);
   }
+
+  try {
+    const coupleDocRef = doc(db, 'shared_data', 'couple');
+    await setDoc(coupleDocRef, {
+      ...info,
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'shared_data/couple');
+  }
 };
+
+export const subscribeToSharedCoupleInfo = (
+  onUpdate: (info: CoupleInfo) => void
+): (() => void) => {
+  const coupleDocRef = doc(db, 'shared_data', 'couple');
+
+  const unsubscribe = onSnapshot(
+    coupleDocRef,
+    async (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && data.personOne && data.personTwo) {
+          const info: CoupleInfo = {
+            personOne: data.personOne,
+            personTwo: data.personTwo,
+            startDate: data.startDate || DEFAULT_COUPLE_INFO.startDate,
+            anniversaryNote: data.anniversaryNote || DEFAULT_COUPLE_INFO.anniversaryNote
+          };
+          localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
+          onUpdate(info);
+          return;
+        }
+      }
+
+      // Khởi tạo nếu chưa có trên Cloud
+      try {
+        const local = getStoredCoupleInfo();
+        await setDoc(coupleDocRef, {
+          ...local,
+          updatedAt: Date.now()
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'shared_data/couple');
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, 'shared_data/couple');
+      onUpdate(getStoredCoupleInfo());
+    }
+  );
+
+  return unsubscribe;
+};
+
+/* =========================================================================
+   4. QUẢN LÝ HÌNH NỀN WEB (BACKGROUND SETTINGS)
+   ========================================================================= */
 
 export const getStoredBackgroundSettings = (): BackgroundSettings => {
   try {
@@ -70,16 +318,50 @@ export const getStoredBackgroundSettings = (): BackgroundSettings => {
   }
 };
 
-export const saveBackgroundSettingsToStorage = (settings: BackgroundSettings): void => {
+export const saveBackgroundSettingsBoth = async (settings: BackgroundSettings): Promise<void> => {
   try {
     localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(settings));
   } catch (error) {
     console.error('Lỗi khi lưu background settings:', error);
   }
+
+  try {
+    const bgDocRef = doc(db, 'shared_data', 'background');
+    await setDoc(bgDocRef, {
+      ...settings,
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'shared_data/background');
+  }
+};
+
+export const subscribeToSharedBgSettings = (
+  onUpdate: (bg: BackgroundSettings) => void
+): (() => void) => {
+  const bgDocRef = doc(db, 'shared_data', 'background');
+
+  const unsubscribe = onSnapshot(
+    bgDocRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data() as BackgroundSettings;
+        if (data && data.type) {
+          localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(data));
+          onUpdate(data);
+        }
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, 'shared_data/background');
+    }
+  );
+
+  return unsubscribe;
 };
 
 /**
- * Nén ảnh trước khi lưu vào localStorage để tối ưu cho web và tránh tràn bộ nhớ
+ * Nén ảnh trước khi lưu để tối ưu tải trang cho web và tránh tràn dung lượng
  */
 export const compressImageFile = (file: File, maxWidth = 1280, quality = 0.85): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -106,7 +388,6 @@ export const compressImageFile = (file: File, maxWidth = 1280, quality = 0.85): 
         }
 
         ctx.drawImage(img, 0, 0, width, height);
-        // Ưu tiên WebP nếu trình duyệt hỗ trợ, nếu không dùng JPEG chất lượng cao
         try {
           const webpUrl = canvas.toDataURL('image/webp', quality);
           if (webpUrl.startsWith('data:image/webp')) {
