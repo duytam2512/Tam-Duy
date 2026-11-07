@@ -48,48 +48,62 @@ app.post("/api/generate-caption", async (req, res) => {
     imageBase64,
   } = req.body;
 
-  // Tạo sẵn 5 gợi ý sáng tạo từ smart engine để đảm bảo luôn luôn có kết quả tuyệt vời
-  const smartFallbacks = generateSmartCaptions({
+  // Tạo sẵn kết quả thông minh giàu cảm xúc và emoji từ smart engine
+  const smartResult = generateSmartCaptions({
     personOne: coupleNames.personOne || "Đức Duy",
     personTwo: coupleNames.personTwo || "Thanh Tâm",
     location,
     tone: (tone as CaptionTone) || "romantic",
     keywords
-  }).map(item => item.text);
+  });
 
-  // Nếu có API Key, thử gọi Gemini AI để sáng tác mới
+  // Nếu có API Key, gọi Gemini AI với prompt chi tiết sâu sắc về tình yêu & thị giác ảnh
   if (process.env.GEMINI_API_KEY) {
     try {
       const toneDescriptions: Record<string, string> = {
-        romantic: "Sâu lắng, ấm áp, đậm chất thơ và tình cảm chân thành",
-        cute: "Ngọt ngào, đáng yêu, nhí nhảnh, dễ thương, ngọt xỉu",
-        peaceful: "Nhẹ nhàng, bình yên, gợi cảm giác tĩnh lặng và an lòng",
-        funny: "Hài hước, dí dỏm, trêu đùa ngọt ngào giữa hai người yêu nhau",
-        poem: "Dạng thơ tình 2-4 câu lục bát hoặc thơ tự do có vần điệu êm ái",
-        short: "Một câu ngắn gọn, tinh tế, bắt trend mạng xã hội (Instagram, Facebook Story)"
+        romantic: "Sâu lắng, ấm áp, thấu cảm, đậm chất thơ và tình cảm chân thành",
+        cute: "Ngọt ngào, đáng yêu, nhí nhảnh, dễ thương, nụ cười rạng rỡ",
+        peaceful: "Nhẹ nhàng, bình yên, gợi cảm giác tĩnh lặng, chữa lành và an lòng",
+        funny: "Hài hước, dí dỏm, trêu đùa ngọt ngào của hai bạn trẻ đang yêu",
+        poem: "Thơ tình 2-4 câu (lục bát hoặc tự do) có vần điệu êm ái, giàu nhạc tính",
+        short: "Một câu ngắn gọn, súc tích, tinh tế chuẩn vibe Instagram/Facebook Story"
       };
 
       const selectedToneDesc = toneDescriptions[tone] || toneDescriptions.romantic;
 
-      const promptText = `Bạn là một nhà thơ và người viết nhật ký tình yêu tài hoa cho cặp đôi ${coupleNames.personOne} & ${coupleNames.personTwo}.
-Hãy sáng tác 5 gợi ý dòng caption / nhật ký kỷ niệm thật độc đáo, bay bổng, tràn ngập cảm xúc và TUYỆT ĐỐI KHÔNG SỬ DỤNG CÁC CÂU SÁO RỖNG LẶP LẠI.
-Ngữ cảnh kỷ niệm:
+      const promptText = `Bạn là một nhà thơ và người viết nhật ký tình yêu tinh tế cho cặp đôi ${coupleNames.personOne} và ${coupleNames.personTwo}.
+Nhiệm vụ: Sáng tác 5 gợi ý dòng caption / nhật ký kỷ niệm thật độc đáo, bay bổng, tràn ngập cảm xúc tình yêu và gắn liền với bức ảnh.
+
+NGỮ CẢNH TÌNH YÊU & KỶ NIỆM:
+- Cặp đôi: ${coupleNames.personOne} & ${coupleNames.personTwo}
 - Địa điểm: ${location || "Một góc nhỏ bình yên của hai đứa"}
 - Cảm xúc chủ đạo: ${selectedToneDesc}
-${keywords ? `- Chi tiết hoặc kỷ niệm riêng: ${keywords}` : ""}
+${keywords ? `- Chi tiết hoặc từ khóa kỷ niệm: ${keywords}` : ""}
 
-Yêu cầu cụ thể:
-1. Mỗi câu gợi ý mang một sắc thái riêng (1 câu thơ, 1 câu ngắn gọn đăng Story, 1 dòng nhật ký sâu lắng, 1 câu ngọt ngào, 1 câu gắn liền với địa điểm).
-2. Tự nhiên xưng hô hoặc lồng ghép tên ${coupleNames.personOne} và ${coupleNames.personTwo} một cách tinh tế.
-3. Chỉ trả về duy nhất định dạng JSON thuần túy (không bọc trong markdown):
+QUY TẮC BẮT BUỘC ĐỂ TRÁNH LẶP LẠI & RẬP KHUÔN:
+1. TUYỆT ĐỐI KHÔNG dùng các câu sáo rỗng quen thuộc trên mạng (như "Thế giới 8 tỷ người...", "Cảm ơn đời...", "Bình yên là...").
+2. Nếu có hình ảnh đính kèm: Hãy quan sát kỹ ánh sáng, màu sắc, cử chỉ (nắm tay, tựa vai, nụ cười, ánh mắt), trang phục, đồ vật (ly cà phê, đóa hoa, bờ biển, con đường...) để viết những câu có 'hồn' và gắn chặt với chi tiết thị giác của bức ảnh.
+3. 5 câu gợi ý PHẢI CÓ CẤU TRÚC NGỮ PHÁP VÀ SẮC THÁI KHÁC BIỆT:
+   - Gợi ý 1: Câu thơ tình ngắn 2-4 câu có vần điệu êm ái.
+   - Gợi ý 2: Câu ngắn gọn 1 câu cực chất để đăng Story mạng xã hội.
+   - Gợi ý 3: Dòng nhật ký tự sự sâu lắng, chân thành như lời tâm tình riêng tư.
+   - Gợi ý 4: Câu trêu đùa dí dỏm hoặc ngọt ngào nhí nhảnh của cặp đôi.
+   - Gợi ý 5: Câu gắn liền với địa điểm cụ thể và chi tiết trong ảnh.
+4. GỢI Ý BIỂU TƯỢNG CẢM XÚC (EMOJI):
+   - Trong mỗi câu gợi ý, đính kèm 2-3 emoji tinh tế, phù hợp chính xác với bức ảnh (ví dụ: biển 🌊🌅🤍, cafe ☕🍰🍂, hoàng hôn 🌇✨🧡, hoa 🌸💐🌿, mưa 🌧️☔🧣, ôm/nắm tay 🫂🤍👫...).
+   - Cung cấp thêm mảng "suggestedEmojis" gồm 6-8 emoji tiêu biểu nhất của bức ảnh để người dùng bấm chọn nhanh.
+
+ĐỊNH DẠNG TRẢ VỀ:
+Chỉ trả về duy nhất chuỗi JSON hợp lệ (không markdown thừa):
 {
   "suggestions": [
-    "Câu 1...",
-    "Câu 2...",
-    "Câu 3...",
-    "Câu 4...",
-    "Câu 5..."
-  ]
+    { "text": "Nội dung câu 1...", "badge": "Thơ tình", "emojis": "🍃🤍✨" },
+    { "text": "Nội dung câu 2...", "badge": "Story ngắn", "emojis": "✨📸📍" },
+    { "text": "Nội dung câu 3...", "badge": "Sâu lắng", "emojis": "☕🤍🌿" },
+    { "text": "Nội dung câu 4...", "badge": "Ngọt ngào", "emojis": "🥰🍓💖" },
+    { "text": "Nội dung câu 5...", "badge": "Gắn với ảnh", "emojis": "🌅🤍✨" }
+  ],
+  "suggestedEmojis": ["🌸", "✨", "🤍", "📸", "☕", "👫", "🍃", "🥰"]
 }`;
 
       const parts: any[] = [];
@@ -120,9 +134,29 @@ Yêu cầu cụ thể:
       if (textOutput) {
         const parsed = JSON.parse(textOutput);
         if (Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0) {
+          // Chuẩn hóa suggestions về dạng chuẩn { text, badge, emojis }
+          const normalized = parsed.suggestions.map((item: any, idx: number) => {
+            if (typeof item === "string") {
+              const defaultBadges = ["Thơ tình", "Story ngắn", "Sâu lắng", "Ngọt ngào", "Gắn với ảnh"];
+              return {
+                text: item,
+                badge: defaultBadges[idx % defaultBadges.length],
+                emojis: "💖✨"
+              };
+            }
+            return {
+              text: item.text || String(item),
+              badge: item.badge || "Gợi ý hay",
+              emojis: item.emojis || "✨"
+            };
+          });
+
           return res.json({
             success: true,
-            suggestions: parsed.suggestions,
+            suggestions: normalized,
+            suggestedEmojis: Array.isArray(parsed.suggestedEmojis) && parsed.suggestedEmojis.length > 0
+              ? parsed.suggestedEmojis
+              : smartResult.suggestedEmojis
           });
         }
       }
@@ -131,10 +165,11 @@ Yêu cầu cụ thể:
     }
   }
 
-  // Trả về kết quả từ Smart Engine (5 câu mới mẻ, phong phú, không lặp)
+  // Trả về kết quả từ Smart Engine (5 câu mới mẻ, phong phú, không lặp kèm gợi ý Emoji)
   return res.json({
     success: true,
-    suggestions: smartFallbacks,
+    suggestions: smartResult.suggestions,
+    suggestedEmojis: smartResult.suggestedEmojis
   });
 });
 
@@ -537,11 +572,10 @@ async function startServer() {
   const httpServer = http.createServer(app);
 
   if (isDev) {
-    const isHmrDisabled = process.env.DISABLE_HMR === "true";
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: isHmrDisabled ? false : { server: httpServer },
+        hmr: false,
       },
       appType: "spa",
     });

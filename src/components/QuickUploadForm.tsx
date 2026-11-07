@@ -14,12 +14,13 @@ import {
   Library,
   ChevronRight,
   Flame,
-  Dices
+  Dices,
+  Smile
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Memory, POPULAR_TAGS, SAMPLE_PHOTO_LIBRARY, CoupleInfo } from '../types';
 import { compressImageFile } from '../services/storage';
-import { generateSmartCaptions, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
+import { generateSmartCaptions, extractContextualEmojis, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
 
 interface QuickUploadFormProps {
   onAddMemory: (memory: Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>) => void;
@@ -53,6 +54,9 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const [aiTone, setAiTone] = useState<CaptionTone>('romantic');
   const [aiKeywords, setAiKeywords] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState<CaptionSuggestion[]>([]);
+  const [suggestedEmojis, setSuggestedEmojis] = useState<string[]>([
+    '💖', '✨', '🤍', '🌸', '📸', '🥰', '☕', '🍃'
+  ]);
   const [showAiPanel, setShowAiPanel] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,6 +102,13 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     if (!location) {
       setLocation(suggestedLocation);
     }
+    const matchingEmojis = extractContextualEmojis({
+      personOne: coupleInfo.personOne || 'Anh',
+      personTwo: coupleInfo.personTwo || 'Em',
+      location: suggestedLocation,
+      tone: aiTone
+    });
+    setSuggestedEmojis(matchingEmojis);
     setShowPhotoLibrary(false);
   };
 
@@ -105,13 +116,17 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const handleGenerateAiCaption = async () => {
     setIsAiGenerating(true);
 
-    const fallbackSuggestions = generateSmartCaptions({
+    const smartResult = generateSmartCaptions({
       personOne: coupleInfo.personOne || 'Anh',
       personTwo: coupleInfo.personTwo || 'Em',
       location: location.trim(),
       tone: aiTone,
       keywords: aiKeywords.trim()
     });
+
+    if (smartResult.suggestedEmojis?.length > 0) {
+      setSuggestedEmojis(smartResult.suggestedEmojis);
+    }
 
     try {
       const response = await fetch('/api/generate-caption', {
@@ -132,21 +147,36 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       if (response.ok) {
         const data = await response.json();
         if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
-          const badges = ['Gợi ý hay', 'Thơ tình', 'Sâu lắng', 'Ngọt ngào', 'Story ngắn'];
-          const mapped: CaptionSuggestion[] = data.suggestions.map((text: string, idx: number) => ({
-            text,
-            badge: badges[idx % badges.length]
-          }));
+          const defaultBadges = ['Thơ tình', 'Story ngắn', 'Sâu lắng', 'Ngọt ngào', 'Gắn với ảnh'];
+          const mapped: CaptionSuggestion[] = data.suggestions.map((item: any, idx: number) => {
+            if (typeof item === 'string') {
+              return {
+                text: item,
+                badge: defaultBadges[idx % defaultBadges.length],
+                emojis: '✨'
+              };
+            }
+            return {
+              text: item.text || String(item),
+              badge: item.badge || 'Gợi ý hay',
+              emojis: item.emojis || '✨'
+            };
+          });
+
           setAiSuggestions(mapped);
+
+          if (Array.isArray(data.suggestedEmojis) && data.suggestedEmojis.length > 0) {
+            setSuggestedEmojis(data.suggestedEmojis);
+          }
           return;
         }
       }
 
       // Nếu API không phản hồi hoặc trên static Vercel, dùng bộ gợi ý đa dạng không lặp
-      setAiSuggestions(fallbackSuggestions);
+      setAiSuggestions(smartResult.suggestions);
     } catch (error) {
       console.warn('Lỗi gọi /api/generate-caption, chuyển sang kho gợi ý thông minh:', error);
-      setAiSuggestions(fallbackSuggestions);
+      setAiSuggestions(smartResult.suggestions);
     } finally {
       setIsAiGenerating(false);
     }
@@ -521,10 +551,16 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
           </div>
 
           {/* Khung viết cảm xúc / nhật ký chính thức */}
-          <div>
-            <label className="block text-xs font-semibold text-[#8C6D58] mb-1">
-              Dòng nhật ký / Cảm xúc của chúng mình <span className="text-[#D98A76]">*</span>
-            </label>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-[#8C6D58]">
+                Dòng nhật ký / Cảm xúc của chúng mình <span className="text-[#D98A76]">*</span>
+              </label>
+              <span className="text-[11px] text-[#8C6D58]/70">
+                {caption.length} ký tự
+              </span>
+            </div>
+
             <textarea
               rows={3}
               required
@@ -533,6 +569,27 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
               placeholder="Viết cảm xúc của bạn hoặc bấm 'Tạo gợi ý với Gemini AI' ở trên nhé..."
               className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden resize-none font-sans"
             />
+
+            {/* Thanh Gợi Ý Biểu Tượng Cảm Xúc (Emoji) Hợp Với Ảnh */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+              <span className="text-[11px] font-medium text-[#8C6D58] flex items-center gap-1 shrink-0">
+                <Smile className="w-3.5 h-3.5 text-[#D98A76]" />
+                <span>Gợi ý emoji hợp ảnh:</span>
+              </span>
+              <div className="flex items-center gap-1 flex-wrap">
+                {suggestedEmojis.map((emoji, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setCaption((prev) => (prev ? `${prev} ${emoji}` : emoji))}
+                    className="w-7 h-7 rounded-lg bg-white hover:bg-[#FAF6F0] border border-[#8C6D58]/15 hover:border-[#E8A598] flex items-center justify-center text-sm shadow-2xs hover:scale-110 active:scale-95 transition"
+                    title={`Chèn ${emoji} vào nhật ký`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Nút 'Lưu Kỷ Niệm' */}
