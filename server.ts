@@ -567,11 +567,52 @@ app.post("/api/youtube/resolve", async (req, res) => {
   }
 });
 
+function patchViteClientForHmr() {
+  try {
+    const viteClientPath = path.resolve(process.cwd(), "node_modules", "vite", "dist", "client", "client.mjs");
+    if (fs.existsSync(viteClientPath)) {
+      let content = fs.readFileSync(viteClientPath, "utf-8");
+      let modified = false;
+
+      if (content.includes('reject(/* @__PURE__ */ new Error("WebSocket closed without opened."));')) {
+        content = content.replace(
+          'reject(/* @__PURE__ */ new Error("WebSocket closed without opened."));',
+          'resolve();'
+        );
+        modified = true;
+      }
+
+      if (content.includes('new WebSocket(`${socketProtocol}://${socketHost}?token=${wsToken}`, "vite-hmr")')) {
+        content = content.replace(
+          'new WebSocket(`${socketProtocol}://${socketHost}?token=${wsToken}`, "vite-hmr")',
+          '({ readyState: 1, OPEN: 1, addEventListener(type, fn) { if (type === "open") setTimeout(fn, 0); }, removeEventListener() {}, send() {}, close() {} })'
+        );
+        modified = true;
+      }
+
+      if (content.includes('new WebSocket(`${socketProtocol}://${directSocketHost}?token=${wsToken}`, "vite-hmr")')) {
+        content = content.replace(
+          'new WebSocket(`${socketProtocol}://${directSocketHost}?token=${wsToken}`, "vite-hmr")',
+          '({ readyState: 1, OPEN: 1, addEventListener(type, fn) { if (type === "open") setTimeout(fn, 0); }, removeEventListener() {}, send() {}, close() {} })'
+        );
+        modified = true;
+      }
+
+      if (modified) {
+        fs.writeFileSync(viteClientPath, content, "utf-8");
+      }
+    }
+  } catch (err) {
+    console.warn("Bỏ qua vá Vite client:", err);
+  }
+}
+
 async function startServer() {
   const isDev = process.env.NODE_ENV !== "production";
   const httpServer = http.createServer(app);
 
   if (isDev) {
+    patchViteClientForHmr();
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
