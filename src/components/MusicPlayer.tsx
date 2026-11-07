@@ -17,9 +17,11 @@ import {
   Loader2,
   Link2,
   Search,
-  Youtube
+  Youtube,
+  Info
 } from 'lucide-react';
 import { MusicTrack, DEFAULT_PLAYLIST } from '../types';
+import { extractYouTubeId, getYouTubeVideoInfoClient } from '../utils/youtube';
 
 declare global {
   interface Window {
@@ -27,6 +29,30 @@ declare global {
     YT?: any;
   }
 }
+
+// Các bài hát mẫu YouTube tình yêu có sẵn link hoạt động mượt mà
+const YOUTUBE_PRESETS = [
+  {
+    name: 'Nàng Thơ - Hoàng Dũng',
+    url: 'https://www.youtube.com/watch?v=Z2t87K8u3QY'
+  },
+  {
+    name: 'Ngày Đầu Tiên - Đức Phúc',
+    url: 'https://www.youtube.com/watch?v=Gk7F72r_f7I'
+  },
+  {
+    name: 'Ánh Nắng Của Anh',
+    url: 'https://www.youtube.com/watch?v=Q8Z_V7v6vHk'
+  },
+  {
+    name: 'Cơn Mưa Tình Yêu',
+    url: 'https://www.youtube.com/watch?v=rL0mY6Vf5Cg'
+  },
+  {
+    name: 'Hẹn Một Mai',
+    url: 'https://www.youtube.com/watch?v=oQxZ_kI3dHQ'
+  }
+];
 
 export const MusicPlayer: React.FC = () => {
   const [playlist, setPlaylist] = useState<MusicTrack[]>(() => {
@@ -46,20 +72,21 @@ export const MusicPlayer: React.FC = () => {
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // In-app confirmation states (tránh window.confirm / window.alert bị block trong iframe)
+  // In-app confirmation states
   const [trackToDelete, setTrackToDelete] = useState<{ id: string; title: string } | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  // Tab thêm nhạc: Zing MP3 | YouTube | Thủ công
-  const [activeAddTab, setActiveAddTab] = useState<'zing' | 'youtube' | 'manual'>('youtube');
+  // Tab thêm nhạc: YouTube | Zing MP3 | Thủ công
+  const [activeAddTab, setActiveAddTab] = useState<'youtube' | 'zing' | 'manual'>('youtube');
+
+  // YouTube Music state
+  const [youtubeInput, setYoutubeInput] = useState('');
+  const [youtubeCustomTitle, setYoutubeCustomTitle] = useState('');
+  const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
 
   // Zing MP3 Downloader state
   const [zingInput, setZingInput] = useState('');
   const [isZingLoading, setIsZingLoading] = useState(false);
-
-  // YouTube Music state
-  const [youtubeInput, setYoutubeInput] = useState('');
-  const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
 
   // Custom song input
   const [customTitle, setCustomTitle] = useState('');
@@ -123,10 +150,6 @@ export const MusicPlayer: React.FC = () => {
     } else {
       initYT();
     }
-
-    return () => {
-      // Dọn dẹp nếu cần
-    };
   }, []);
 
   // Đồng bộ âm lượng cho cả HTML Audio và YouTube Player
@@ -234,7 +257,7 @@ export const MusicPlayer: React.FC = () => {
     setShowPlaylistModal(false);
   };
 
-  // Thêm nhạc từ link MP3 thủ công
+  // Thêm nhạc từ link MP3 thủ công (hoạt động 100% trên Vercel)
   const handleAddCustomTrack = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customTitle.trim() || !customUrl.trim()) return;
@@ -263,29 +286,77 @@ export const MusicPlayer: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Thêm nhạc từ link hoặc tìm kiếm YouTube
+  /**
+   * Thêm nhạc từ YouTube
+   * Hoạt động 100% trên cả Vercel tĩnh, Localhost và mọi môi trường
+   * Tự động giải mã client-side nếu máy chủ serverless không có sẵn
+   */
   const handleAddYouTubeTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     const query = youtubeInput.trim();
     if (!query) return;
 
     setIsYoutubeLoading(true);
-    setToastMessage('Đang kết nối YouTube và phân tích thông tin bài hát...');
+    setToastMessage('Đang xử lý và nạp bài hát YouTube...');
 
     try {
-      const response = await fetch('/api/youtube/resolve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: query })
-      });
+      let resolvedSong: MusicTrack | null = null;
+      const extractedVideoId = extractYouTubeId(query);
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Không tìm thấy video YouTube phù hợp');
+      // Bước 1: Thử gọi API backend (nếu chạy local hoặc có server)
+      try {
+        const response = await fetch('/api/youtube/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: query })
+        });
+        const contentType = response.headers.get('content-type') || '';
+        if (response.ok && contentType.includes('application/json')) {
+          const data = await response.json();
+          if (data && data.success && data.song) {
+            resolvedSong = data.song;
+          }
+        }
+      } catch {
+        // Backend không phản hồi hoặc môi trường tĩnh Vercel -> tiếp tục giải mã client-side
       }
 
-      const newSong: MusicTrack = data.song;
+      // Bước 2: Nếu chưa có bài từ backend, giải mã client-side trực tiếp
+      if (!resolvedSong) {
+        let videoId = extractedVideoId;
+
+        // Nếu người dùng không dán link mà gõ tên bài, kiểm tra danh sách bài mẫu
+        if (!videoId) {
+          const matchedPreset = YOUTUBE_PRESETS.find(
+            (p) => p.name.toLowerCase().includes(query.toLowerCase()) || query.toLowerCase().includes(p.name.toLowerCase())
+          );
+          if (matchedPreset) {
+            videoId = extractYouTubeId(matchedPreset.url);
+          }
+        }
+
+        if (!videoId) {
+          throw new Error('Vui lòng dán link video YouTube (ví dụ: https://youtu.be/... hoặc https://youtube.com/watch?v=...)');
+        }
+
+        const info = await getYouTubeVideoInfoClient(videoId, youtubeCustomTitle);
+        resolvedSong = {
+          id: `yt-${videoId}`,
+          title: info.title,
+          artist: info.artist,
+          mood: 'YouTube Music',
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          thumbnail: info.thumbnail,
+          isYouTube: true,
+          youtubeId: videoId
+        };
+      }
+
+      if (!resolvedSong) {
+        throw new Error('Không thể nhận diện video YouTube này. Bạn thử link khác nhé!');
+      }
+
+      const newSong = resolvedSong;
 
       // Kiểm tra nếu bài hát đã có trong playlist
       const existingIdx = playlist.findIndex((t) => t.id === newSong.id);
@@ -309,11 +380,12 @@ export const MusicPlayer: React.FC = () => {
       }
 
       setYoutubeInput('');
+      setYoutubeCustomTitle('');
       setCurrentTrackIndex(targetIdx);
       setIsPlaying(true);
 
-      // Nếu YouTube Player đã sẵn sàng, load và phát luôn
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function' && newSong.youtubeId) {
+      // Nạp và phát luôn trên YouTube Player
+      if (newSong.youtubeId && ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
         if (audioRef.current) audioRef.current.pause();
         ytPlayerRef.current.loadVideoById(newSong.youtubeId);
       }
@@ -322,21 +394,21 @@ export const MusicPlayer: React.FC = () => {
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err: any) {
       console.error('Lỗi thêm nhạc YouTube:', err);
-      setToastMessage(`⚠️ ${err.message || 'Không thể lấy bài hát từ YouTube. Vui lòng kiểm tra lại link!'}`);
+      setToastMessage(`⚠️ ${err.message || 'Không thể thêm bài từ YouTube. Bạn vui lòng kiểm tra lại link nhé!'}`);
       setTimeout(() => setToastMessage(null), 5000);
     } finally {
       setIsYoutubeLoading(false);
     }
   };
 
-  // Tự động tải nhạc từ link Zing MP3 về website thành bài của tôi
+  // Tải nhạc từ Zing MP3 (có kiểm tra an toàn cho Vercel)
   const handleDownloadFromZing = async (e: React.FormEvent) => {
     e.preventDefault();
     const query = zingInput.trim();
     if (!query) return;
 
     setIsZingLoading(true);
-    setToastMessage('Đang kết nối Zing MP3 và tự động tải bài hát về website...');
+    setToastMessage('Đang kết nối Zing MP3...');
 
     try {
       const response = await fetch('/api/zingmp3/resolve', {
@@ -345,15 +417,17 @@ export const MusicPlayer: React.FC = () => {
         body: JSON.stringify({ url: query })
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !contentType.includes('application/json')) {
+        throw new Error('Tính năng Zing MP3 yêu cầu máy chủ Node.js. Trên web Vercel tĩnh, bạn hãy dùng tab "Link YouTube" hoặc "MP3 thủ công" để thêm nhạc mượt mà nhé!');
+      }
 
-      if (!response.ok || !data.success) {
+      const data = await response.json();
+      if (!data.success) {
         throw new Error(data.message || 'Không thể tải bài hát từ Zing MP3');
       }
 
       const newSong: MusicTrack = data.song;
-
-      // Kiểm tra nếu bài hát đã có trong playlist
       const existingIdx = playlist.findIndex((t) => t.id === newSong.id);
       let updatedPlaylist: MusicTrack[];
       let targetIdx: number;
@@ -391,14 +465,14 @@ export const MusicPlayer: React.FC = () => {
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err: any) {
       console.error('Lỗi tải Zing MP3:', err);
-      setToastMessage(`⚠️ ${err.message || 'Không thể tải bài hát từ Zing MP3. Vui lòng kiểm tra lại link hoặc thử bài khác!'}`);
+      setToastMessage(`⚠️ ${err.message || 'Không thể tải bài hát từ Zing MP3. Hãy dùng tab Link YouTube nhé!'}`);
       setTimeout(() => setToastMessage(null), 5000);
     } finally {
       setIsZingLoading(false);
     }
   };
 
-  // Mở hộp thoại xác nhận xóa bài hát (In-app popup, không dùng window.confirm)
+  // Mở hộp thoại xác nhận xóa bài hát
   const handleDeleteClick = (trackId: string, trackTitle: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
@@ -497,7 +571,7 @@ export const MusicPlayer: React.FC = () => {
 
   return (
     <>
-      {/* HTML5 Audio Player cho nhạc MP3 cục bộ & Zing MP3 */}
+      {/* HTML5 Audio Player cho nhạc MP3 cục bộ & link âm thanh trực tiếp */}
       <audio
         ref={audioRef}
         src={currentTrack?.isYouTube ? undefined : currentTrack?.url}
@@ -572,7 +646,7 @@ export const MusicPlayer: React.FC = () => {
               </div>
               <span className="text-[10px] text-[#8C6D58] truncate block flex items-center gap-1">
                 {currentTrack?.isYouTube && (
-                  <span className="text-[#FF0000] font-medium">● YouTube:</span>
+                  <span className="text-red-600 font-medium">● YouTube:</span>
                 )}
                 <span>{currentTrack?.artist}</span>
               </span>
@@ -582,7 +656,7 @@ export const MusicPlayer: React.FC = () => {
             <div className="flex items-center gap-1 border-l border-[#8C6D58]/15 pl-2">
               <button
                 onClick={handlePrev}
-                className="p-1 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-lg transition-all"
+                className="p-1 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-lg transition-all cursor-pointer"
                 title="Bài trước"
               >
                 <SkipBack className="w-3.5 h-3.5" />
@@ -602,7 +676,7 @@ export const MusicPlayer: React.FC = () => {
 
               <button
                 onClick={handleNext}
-                className="p-1 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-lg transition-all"
+                className="p-1 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-lg transition-all cursor-pointer"
                 title="Bài tiếp theo"
               >
                 <SkipForward className="w-3.5 h-3.5" />
@@ -654,7 +728,7 @@ export const MusicPlayer: React.FC = () => {
       {/* MODAL DANH SÁCH BÀI HÁT & THAY ĐỔI THEO LỰA CHỌN */}
       {showPlaylistModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-xs">
-          <div className="bg-[#FFFDF9] rounded-3xl p-5 sm:p-7 max-w-md w-full border border-[#8C6D58]/20 shadow-2xl relative my-6 max-h-[85vh] flex flex-col justify-between">
+          <div className="bg-[#FFFDF9] rounded-3xl p-5 sm:p-7 max-w-md w-full border border-[#8C6D58]/20 shadow-2xl relative my-6 max-h-[88vh] flex flex-col justify-between">
             {/* Header Modal */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -674,20 +748,20 @@ export const MusicPlayer: React.FC = () => {
                 Chọn Nhạc Nền Góc Nhỏ
               </h3>
               <p className="text-xs text-[#8C6D58] mb-3">
-                Thay đổi giai điệu, thêm nhạc từ YouTube, Zing MP3 hoặc file riêng của hai bạn
+                Thêm nhạc yêu thích từ link YouTube hoặc link file MP3 của hai đứa
               </p>
 
               {/* Thông báo thao tác (Toast) */}
               {toastMessage && (
-                <div className="mb-3 px-3 py-1.5 rounded-xl bg-[#E8A598]/20 border border-[#D98A76]/40 text-xs text-[#D98A76] font-medium flex items-center gap-1.5 animate-fadeIn">
-                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{toastMessage}</span>
+                <div className="mb-3 px-3 py-2 rounded-xl bg-[#E8A598]/20 border border-[#D98A76]/40 text-xs text-[#D98A76] font-medium flex items-center gap-1.5 animate-fadeIn">
+                  <Sparkles className="w-4 h-4 shrink-0" />
+                  <span className="leading-snug">{toastMessage}</span>
                 </div>
               )}
             </div>
 
             {/* Danh sách các bài hát có thể chọn */}
-            <div className="space-y-1.5 overflow-y-auto max-h-[36vh] pr-1 py-1">
+            <div className="space-y-1.5 overflow-y-auto max-h-[32vh] pr-1 py-1">
               {playlist.map((track, idx) => {
                 const isSelected = idx === currentTrackIndex;
                 const isCustom = track.id.startsWith('custom-');
@@ -793,25 +867,37 @@ export const MusicPlayer: React.FC = () => {
               </button>
             </div>
 
-            {/* PHẦN THÊM BÀI HÁT: YOUTUBE | ZING MP3 | LINK THỦ CÔNG */}
+            {/* PHẦN THÊM BÀI HÁT: YOUTUBE | MP3 THỦ CÔNG | ZING MP3 */}
             <div className="pt-3 border-t border-[#8C6D58]/10 mt-2">
-              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('youtube')}
-                  className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`text-xs px-3 py-1 rounded-full font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                     activeAddTab === 'youtube'
                       ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-2xs'
                       : 'bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28]'
                   }`}
                 >
                   <Youtube className="w-3.5 h-3.5" />
-                  <span>Link YouTube</span>
+                  <span>Link YouTube (Khuyên dùng)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAddTab('manual')}
+                  className={`text-xs px-3 py-1 rounded-full font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                    activeAddTab === 'manual'
+                      ? 'bg-gradient-to-r from-[#D98A76] to-[#C87D55] text-white shadow-2xs'
+                      : 'bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28]'
+                  }`}
+                >
+                  <Link2 className="w-3 h-3" />
+                  <span>Link MP3 trực tiếp</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('zing')}
-                  className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all flex items-center gap-1 cursor-pointer ${
                     activeAddTab === 'zing'
                       ? 'bg-gradient-to-r from-[#D98A76] to-[#C87D55] text-white shadow-2xs'
                       : 'bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28]'
@@ -820,29 +906,17 @@ export const MusicPlayer: React.FC = () => {
                   <Download className="w-3 h-3" />
                   <span>Zing MP3</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveAddTab('manual')}
-                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all flex items-center gap-1 cursor-pointer ${
-                    activeAddTab === 'manual'
-                      ? 'bg-gradient-to-r from-[#D98A76] to-[#C87D55] text-white shadow-2xs'
-                      : 'bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28]'
-                  }`}
-                >
-                  <Link2 className="w-3 h-3" />
-                  <span>MP3 thủ công</span>
-                </button>
               </div>
 
               {activeAddTab === 'youtube' ? (
-                /* TAB 1: THÊM NHẠC TỪ LINK YOUTUBE */
+                /* TAB 1: THÊM NHẠC TỪ LINK YOUTUBE (HOẠT ĐỘNG 100% TRÊN VERCEL) */
                 <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-red-200">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-semibold text-[#3D2E28] flex items-center gap-1">
                       <Youtube className="w-3.5 h-3.5 text-red-600" />
-                      <span>Dán link YouTube hoặc tên bài hát:</span>
+                      <span>Dán link YouTube bất kỳ:</span>
                     </span>
-                    <span className="text-[10px] text-red-600 font-medium">Hỗ trợ mọi video</span>
+                    <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded-sm">Hoạt động tốt trên Vercel</span>
                   </div>
 
                   <form onSubmit={handleAddYouTubeTrack} className="space-y-2">
@@ -850,7 +924,7 @@ export const MusicPlayer: React.FC = () => {
                       <input
                         type="text"
                         required
-                        placeholder="Dán link (https://youtube.com/watch?v=... hoặc youtu.be/...) hoặc tên bài..."
+                        placeholder="Dán link (https://youtu.be/... hoặc https://youtube.com/watch?v=...)"
                         value={youtubeInput}
                         onChange={(e) => setYoutubeInput(e.target.value)}
                         disabled={isYoutubeLoading}
@@ -865,7 +939,7 @@ export const MusicPlayer: React.FC = () => {
                         {isYoutubeLoading ? (
                           <>
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Đang tìm...</span>
+                            <span>Đang nạp...</span>
                           </>
                         ) : (
                           <>
@@ -876,93 +950,44 @@ export const MusicPlayer: React.FC = () => {
                       </button>
                     </div>
 
-                    {/* Gợi ý nhanh các bài hát YouTube lãng mạn */}
+                    <input
+                      type="text"
+                      placeholder="Tên bài hát hiển thị (Tùy chọn, để trống sẽ tự lấy tên video)"
+                      value={youtubeCustomTitle}
+                      onChange={(e) => setYoutubeCustomTitle(e.target.value)}
+                      disabled={isYoutubeLoading}
+                      className="w-full px-3 py-1.5 text-xs rounded-xl bg-white border border-[#8C6D58]/15 focus:border-red-500 focus:outline-hidden"
+                    />
+
+                    {/* Gợi ý nhanh các bài hát YouTube có sẵn link */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-[10px] text-[#8C6D58]">Gợi ý:</span>
-                      {[
-                        'Nàng Thơ - Hoàng Dũng',
-                        'Ngày Đầu Tiên - Đức Phúc',
-                        'Ánh Nắng Của Anh',
-                        'Hẹn Một Mai',
-                        'Cơn Mưa Tình Yêu'
-                      ].map((s) => (
+                      <span className="text-[10px] text-[#8C6D58]">Chọn nhanh:</span>
+                      {YOUTUBE_PRESETS.map((preset) => (
                         <button
-                          key={s}
+                          key={preset.name}
                           type="button"
-                          onClick={() => setYoutubeInput(s)}
+                          onClick={() => {
+                            setYoutubeInput(preset.url);
+                            setYoutubeCustomTitle(preset.name);
+                          }}
                           className="text-[10px] px-2 py-0.5 rounded-full bg-white hover:bg-red-50 text-red-600 border border-red-200 transition-all cursor-pointer"
                         >
-                          {s}
+                          {preset.name.split(' - ')[0]}
                         </button>
                       ))}
                     </div>
                   </form>
                 </div>
-              ) : activeAddTab === 'zing' ? (
-                /* TAB 2: TẢI NHẠC TỰ ĐỘNG TỪ ZING MP3 */
-                <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#C87D55]/20">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] font-semibold text-[#3D2E28] flex items-center gap-1">
-                      <span>Dán link Zing MP3 hoặc tên bài hát:</span>
-                    </span>
-                    <span className="text-[10px] text-[#8C6D58]">Tự động tải về website</span>
-                  </div>
-
-                  <form onSubmit={handleDownloadFromZing} className="space-y-2">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        placeholder="Dán link bài hát (https://zingmp3.vn/bai-hat/...) hoặc tên bài hát..."
-                        value={zingInput}
-                        onChange={(e) => setZingInput(e.target.value)}
-                        disabled={isZingLoading}
-                        className="w-full pl-8 pr-20 py-2 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#D98A76] focus:outline-hidden disabled:opacity-50"
-                      />
-                      <Search className="w-3.5 h-3.5 text-[#8C6D58] absolute left-2.5 top-2.5" />
-                      <button
-                        type="submit"
-                        disabled={isZingLoading || !zingInput.trim()}
-                        className="absolute right-1 top-1 bottom-1 px-3 bg-[#D98A76] hover:bg-[#C87D55] text-white text-xs font-semibold rounded-lg flex items-center gap-1 disabled:opacity-50 transition-all cursor-pointer"
-                      >
-                        {isZingLoading ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Đang tải...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Download className="w-3.5 h-3.5" />
-                            <span>Tải Về</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Gợi ý nhanh các bài hát Zing MP3 lãng mạn */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-[10px] text-[#8C6D58]">Thử nhanh:</span>
-                      {[
-                        'Nàng Thơ - Hoàng Dũng',
-                        'Chỉ Là Không Cùng Nhau',
-                        'Ngày Đầu Tiên - Đức Phúc',
-                        'Có Em Chờ'
-                      ].map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => setZingInput(s)}
-                          className="text-[10px] px-2 py-0.5 rounded-full bg-white hover:bg-[#F9F6F0] text-[#D98A76] border border-[#D98A76]/25 transition-all cursor-pointer"
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </form>
-                </div>
-              ) : (
-                /* TAB 3: NHẬP LINK MP3 THỦ CÔNG */
+              ) : activeAddTab === 'manual' ? (
+                /* TAB 2: NHẬP LINK MP3 TRỰC TIẾP (HOẠT ĐỘNG 100% TRÊN VERCEL) */
                 <form onSubmit={handleAddCustomTrack} className="space-y-2 bg-[#FAF7F2] p-3 rounded-2xl border border-[#8C6D58]/15">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-semibold text-[#3D2E28] flex items-center gap-1">
+                      <Link2 className="w-3.5 h-3.5 text-[#D98A76]" />
+                      <span>Thêm link file nhạc (.mp3 / .ogg / stream):</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded-sm">Mọi web tĩnh</span>
+                  </div>
                   <input
                     type="text"
                     required
@@ -988,6 +1013,53 @@ export const MusicPlayer: React.FC = () => {
                     </button>
                   </div>
                 </form>
+              ) : (
+                /* TAB 3: TẢI NHẠC TỪ ZING MP3 (CẦN SERVER NODE.JS) */
+                <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#C87D55]/20">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-semibold text-[#3D2E28] flex items-center gap-1">
+                      <span>Dán link Zing MP3:</span>
+                    </span>
+                    <span className="text-[10px] text-[#8C6D58]">Tự động tải về</span>
+                  </div>
+
+                  <form onSubmit={handleDownloadFromZing} className="space-y-2">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Dán link bài hát (https://zingmp3.vn/bai-hat/...)..."
+                        value={zingInput}
+                        onChange={(e) => setZingInput(e.target.value)}
+                        disabled={isZingLoading}
+                        className="w-full pl-8 pr-20 py-2 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#D98A76] focus:outline-hidden disabled:opacity-50"
+                      />
+                      <Search className="w-3.5 h-3.5 text-[#8C6D58] absolute left-2.5 top-2.5" />
+                      <button
+                        type="submit"
+                        disabled={isZingLoading || !zingInput.trim()}
+                        className="absolute right-1 top-1 bottom-1 px-3 bg-[#D98A76] hover:bg-[#C87D55] text-white text-xs font-semibold rounded-lg flex items-center gap-1 disabled:opacity-50 transition-all cursor-pointer"
+                      >
+                        {isZingLoading ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Đang tải...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Tải Về</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="flex items-start gap-1 text-[10px] text-[#8C6D58] bg-[#F9F6F0] p-1.5 rounded-lg border border-[#8C6D58]/10">
+                      <Info className="w-3.5 h-3.5 shrink-0 text-[#D98A76] mt-0.5" />
+                      <span>Trên Vercel bản tĩnh không có máy chủ, bạn nên dùng tab <strong>Link YouTube</strong> hoặc <strong>Link MP3 trực tiếp</strong> nhé!</span>
+                    </div>
+                  </form>
+                </div>
               )}
             </div>
 
