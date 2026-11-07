@@ -27,9 +27,9 @@ export interface BackgroundSettings {
 export type ViewMode = 'masonry' | 'timeline';
 
 export const DEFAULT_COUPLE_INFO: CoupleInfo = {
-  personOne: "Anh",
-  personTwo: "Em",
-  startDate: "2023-02-14",
+  personOne: "Đức Duy",
+  personTwo: "Thanh Tâm",
+  startDate: "2025-05-19",
   anniversaryNote: "Từng ngày bên nhau đều là ngày bình yên và dịu dàng nhất."
 };
 

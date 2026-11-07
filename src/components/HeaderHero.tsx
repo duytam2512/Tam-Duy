@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen, Snowflake } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen, Snowflake, Film } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
 import { BrandLogo } from './BrandLogo';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderHeroProps {
   coupleInfo: CoupleInfo;
@@ -13,6 +14,7 @@ interface HeaderHeroProps {
   onOpenStandaloneModal: () => void;
   onOpenBackgroundModal: () => void;
   onOpenReadingMode: () => void;
+  onOpenVideoMaker: () => void;
   isSnowing: boolean;
   onToggleSnow: () => void;
 }
@@ -26,6 +28,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   onOpenStandaloneModal,
   onOpenBackgroundModal,
   onOpenReadingMode,
+  onOpenVideoMaker,
   isSnowing,
   onToggleSnow
 }) => {
@@ -97,15 +100,25 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Nút Tạo Video Kỷ Niệm Ghép Ảnh Chuẩn Google Photos */}
+          <button
+            onClick={onOpenVideoMaker}
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-rose-500 via-rose-600 to-amber-500 hover:opacity-95 px-3.5 py-1.5 rounded-full shadow-md transition-all active:scale-95 cursor-pointer"
+            title="Ghép ảnh kỷ niệm thành thước phim video lãng mạn kèm nhạc nền như Google Photos"
+          >
+            <Film className="w-3.5 h-3.5" />
+            <span>Tạo Video Kỷ Niệm</span>
+          </button>
+
           {/* Nút Bật Chế Độ Đọc Kỷ Niệm */}
           <button
             onClick={onOpenReadingMode}
-            className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-[#D98A76] to-[#C87D55] hover:opacity-95 px-3.5 py-1.5 rounded-full shadow-xs transition-all active:scale-95"
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-[#D98A76] to-[#C87D55] hover:opacity-95 px-3.5 py-1.5 rounded-full shadow-xs transition-all active:scale-95 cursor-pointer"
             title="Bật Chế độ đọc: Ẩn các nút chức năng, cùng nhau đọc lại nhật ký lãng mạn"
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span>Chế Độ Đọc</span>
+            <span className="hidden sm:inline">Chế Độ Đọc</span>
           </button>
 
           {/* Nút Bật/Tắt Tuyết Rơi Lãng Mạn */}
@@ -141,6 +154,9 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
             <FileCode className="w-3.5 h-3.5 text-[#D98A76]" />
             <span className="hidden sm:inline">Mã nguồn</span> 1 File
           </button>
+
+          {/* Nút Cài Đặt App Trên Điện Thoại (PWA) */}
+          <PWAInstallButton variant="nav" />
 
           {/* Nút Chỉnh Sửa Thông Tin Cặp Đôi */}
           <button

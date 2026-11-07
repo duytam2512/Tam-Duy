@@ -361,9 +361,10 @@ export const subscribeToSharedBgSettings = (
 };
 
 /**
- * Nén ảnh trước khi lưu để tối ưu tải trang cho web và tránh tràn dung lượng
+ * Nén ảnh trước khi lưu để tối ưu tải trang cho web và đảm bảo đồng bộ Cloud Firestore mượt mà
+ * Hỗ trợ nén ảnh chụp trực tiếp từ camera điện thoại (iPhone, Android) dung lượng lớn về mức an toàn (< 600KB)
  */
-export const compressImageFile = (file: File, maxWidth = 1280, quality = 0.85): Promise<string> => {
+export const compressImageFile = (file: File, maxWidth = 1200, quality = 0.8): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -372,6 +373,7 @@ export const compressImageFile = (file: File, maxWidth = 1280, quality = 0.85): 
         let width = img.width;
         let height = img.height;
 
+        // Giới hạn chiều rộng tối đa
         if (width > maxWidth) {
           height = Math.round((height * maxWidth) / width);
           width = maxWidth;
@@ -388,17 +390,36 @@ export const compressImageFile = (file: File, maxWidth = 1280, quality = 0.85): 
         }
 
         ctx.drawImage(img, 0, 0, width, height);
+
+        // Thử nén sang WebP trước (tỷ lệ nén tốt nhất)
+        let outputUrl = '';
         try {
           const webpUrl = canvas.toDataURL('image/webp', quality);
           if (webpUrl.startsWith('data:image/webp')) {
-            resolve(webpUrl);
-            return;
+            outputUrl = webpUrl;
           }
         } catch {
-          // fallback
+          // fallback jpeg
         }
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(dataUrl);
+
+        if (!outputUrl) {
+          outputUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+
+        // Nếu chuỗi base64 vẫn lớn hơn 700KB (quá nặng cho 1 Firestore doc 1MB), nén thêm một bước
+        if (outputUrl.length > 700000) {
+          const secondCanvas = document.createElement('canvas');
+          const scale = 0.75;
+          secondCanvas.width = Math.round(width * scale);
+          secondCanvas.height = Math.round(height * scale);
+          const secondCtx = secondCanvas.getContext('2d');
+          if (secondCtx) {
+            secondCtx.drawImage(canvas, 0, 0, secondCanvas.width, secondCanvas.height);
+            outputUrl = secondCanvas.toDataURL('image/jpeg', 0.72);
+          }
+        }
+
+        resolve(outputUrl);
       };
       img.onerror = reject;
       img.src = e.target?.result as string;

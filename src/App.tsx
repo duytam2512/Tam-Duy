@@ -9,6 +9,9 @@ import { BackgroundSettingsModal } from './components/BackgroundSettingsModal';
 import { MusicPlayer } from './components/MusicPlayer';
 import { ReadingModeView } from './components/ReadingModeView';
 import { SnowEffect } from './components/SnowEffect';
+import { GooglePhotosVideoModal } from './components/GooglePhotosVideoModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { PWAInstallButton } from './components/PWAInstallButton';
 import { Memory, CoupleInfo, BackgroundSettings, DEFAULT_BG_SETTINGS } from './types';
 import {
   getStoredMemories,
@@ -36,6 +39,7 @@ export function App() {
   const [isStandaloneOpen, setIsStandaloneOpen] = useState(false);
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
   const [isReadingModeOpen, setIsReadingModeOpen] = useState(false);
+  const [isVideoMakerOpen, setIsVideoMakerOpen] = useState(false);
   const [isSnowing, setIsSnowing] = useState(() => {
     try {
       return localStorage.getItem('goc_nho_snow') !== 'false';
@@ -58,10 +62,10 @@ export function App() {
     });
   };
 
-  // Đồng bộ thời gian thực từ Cloud Firestore (hoạt động trên cả Laptop, Cốc Cốc, Điện thoại, v.v.)
+  // Đồng bộ thời gian thực từ Cloud Firestore & liên tab (hoạt động trên cả Laptop, Cốc Cốc, Điện thoại, v.v.)
   useEffect(() => {
     const unsubMemories = subscribeToSharedMemories((sharedMemories) => {
-      if (sharedMemories && sharedMemories.length > 0) {
+      if (Array.isArray(sharedMemories)) {
         setMemories(sharedMemories);
       }
     });
@@ -78,10 +82,35 @@ export function App() {
       }
     });
 
+    // Lắng nghe sự kiện đồng bộ tức thì giữa các tab / cửa sổ trình duyệt trên cùng thiết bị
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'goc_nho_binh_yen_memories_v3' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setMemories(parsed);
+        } catch {}
+      }
+      if (e.key === 'goc_nho_binh_yen_couple_v3' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && parsed.personOne) setCoupleInfo(parsed);
+        } catch {}
+      }
+      if (e.key === 'goc_nho_binh_yen_bg_v3' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && parsed.type) setBackgroundSettings(parsed);
+        } catch {}
+      }
+    };
+
+    window.addEventListener('storage', handleStorageEvent);
+
     return () => {
       unsubMemories();
       unsubCouple();
       unsubBg();
+      window.removeEventListener('storage', handleStorageEvent);
     };
   }, []);
 
@@ -207,6 +236,7 @@ export function App() {
           onOpenStandaloneModal={() => setIsStandaloneOpen(true)}
           onOpenBackgroundModal={() => setIsBackgroundModalOpen(true)}
           onOpenReadingMode={() => setIsReadingModeOpen(true)}
+          onOpenVideoMaker={() => setIsVideoMakerOpen(true)}
           isSnowing={isSnowing}
           onToggleSnow={handleToggleSnow}
         />
@@ -333,6 +363,20 @@ export function App() {
         memories={memories}
         coupleInfo={coupleInfo}
       />
+
+      {/* Ghép Ảnh Thành Video Kỷ Niệm (Google Photos Style Highlight Video Maker) */}
+      <GooglePhotosVideoModal
+        isOpen={isVideoMakerOpen}
+        onClose={() => setIsVideoMakerOpen(false)}
+        memories={memories}
+        coupleInfo={coupleInfo}
+      />
+
+      {/* Chỉ Báo Chế Độ Offline Cho PWA */}
+      <OfflineIndicator />
+
+      {/* Nút Cài Đặt App Nổi Nhanh Trên Điện Thoại */}
+      <PWAInstallButton variant="floating" />
     </div>
   );
 }

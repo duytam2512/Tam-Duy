@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import path from "path";
@@ -527,10 +528,15 @@ app.post("/api/youtube/resolve", async (req, res) => {
 
 async function startServer() {
   const isDev = process.env.NODE_ENV !== "production";
+  const httpServer = http.createServer(app);
 
   if (isDev) {
+    const isHmrDisabled = process.env.DISABLE_HMR === "true";
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: isHmrDisabled ? false : { server: httpServer },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -542,7 +548,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     console.log(`Server chạy tại: http://localhost:${PORT}`);
   });
 }
