@@ -58,6 +58,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     '💖', '✨', '🤍', '🌸', '📸', '🥰', '☕', '🍃'
   ]);
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,7 +70,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       const compressed = await compressImageFile(file, 1280, 0.85);
       setImagePreview(compressed);
     } catch (err) {
-      console.error('Lỗi nén ảnh:', err);
+      console.warn('Lỗi nén ảnh:', err);
     }
   };
 
@@ -91,7 +92,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
         const compressed = await compressImageFile(file, 1280, 0.85);
         setImagePreview(compressed);
       } catch (err) {
-        console.error('Lỗi khi nén ảnh kéo thả:', err);
+        console.warn('Lỗi khi nén ảnh kéo thả:', err);
       }
     }
   };
@@ -188,12 +189,13 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
     if (!imagePreview) {
-      alert('Vui lòng chọn hoặc tải lên một tấm ảnh kỷ niệm nhé!');
+      setValidationError('Vui lòng chọn hoặc tải lên một tấm ảnh kỷ niệm nhé!');
       return;
     }
     if (!caption.trim()) {
-      alert('Hãy viết vài dòng cảm xúc hoặc bấm dùng Gemini AI để viết gợi ý nhé!');
+      setValidationError('Hãy viết vài dòng cảm xúc hoặc bấm dùng Gemini AI để viết gợi ý nhé!');
       return;
     }
 
@@ -251,6 +253,12 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {validationError && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3.5 py-2 rounded-xl text-xs font-medium animate-fadeIn">
+              ⚠️ {validationError}
+            </div>
+          )}
+
           {/* Ô Chọn / Tải ảnh lên với Live Preview */}
           <div>
             <div className="flex items-center justify-between mb-1.5">

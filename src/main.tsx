@@ -3,35 +3,39 @@ import App from './App.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 
-// Tự động kiểm tra và cập nhật phiên bản mới ngay lập tức khi có thay đổi trên Google Studio
-const updateSW = registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    // Kích hoạt ngay service worker mới và tải lại trang
-    updateSW(true);
-  },
-  onOfflineReady() {
-    console.log('[PWA] Ứng dụng đã sẵn sàng chạy offline');
-  },
-  onRegisteredSW(swUrl, registration) {
-    if (registration) {
-      // Định kỳ kiểm tra bản build mới từ Google Studio
-      setInterval(() => {
-        registration.update().catch(() => {});
-      }, 30000);
-    }
-  },
-});
+// Chỉ đăng ký Service Worker trong môi trường production (tránh lỗi 404 sw.js khi dev trong iframe)
+if (import.meta.env.PROD && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  try {
+    const updateSW = registerSW({
+      immediate: true,
+      onNeedRefresh() {
+        // Tải lại khi có phiên bản mới
+        updateSW(true);
+      },
+      onOfflineReady() {
+        console.log('[PWA] Sẵn sàng hoạt động ngoại tuyến');
+      },
+      onRegisteredSW(swUrl, registration) {
+        if (registration) {
+          setInterval(() => {
+            registration.update().catch(() => {});
+          }, 60000);
+        }
+      },
+    });
 
-// Tự động kiểm tra bản cập nhật mới mỗi khi người dùng mở lại hoặc chuyển về tab App
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.update().catch(() => {});
-      });
-    }
-  });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        navigator.serviceWorker.ready
+          .then((reg) => {
+            reg.update().catch(() => {});
+          })
+          .catch(() => {});
+      }
+    });
+  } catch (err) {
+    console.warn('[PWA] Bỏ qua đăng ký service worker:', err);
+  }
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

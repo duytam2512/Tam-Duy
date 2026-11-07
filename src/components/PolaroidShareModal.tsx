@@ -115,7 +115,7 @@ export const PolaroidShareModal: React.FC<PolaroidShareModalProps> = ({
     };
 
     img.onerror = () => {
-      console.error('Không thể tải ảnh cho canvas');
+      console.warn('Không thể tải ảnh cho canvas');
       setIsGenerating(false);
     };
 

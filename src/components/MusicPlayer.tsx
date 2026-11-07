@@ -149,7 +149,7 @@ export const MusicPlayer: React.FC = () => {
               }
             });
           } catch (e) {
-            console.error('Lỗi tạo YouTube Player:', e);
+            console.warn('Đang chờ khởi tạo YouTube Player:', e);
           }
         }
       }
@@ -248,7 +248,8 @@ export const MusicPlayer: React.FC = () => {
         audioRef.current.play().then(() => {
           setIsPlaying(true);
         }).catch((err) => {
-          console.error('Không thể phát nhạc:', err);
+          console.warn('Chưa thể phát nhạc tự động (chờ tương tác):', err);
+          setIsPlaying(false);
         });
       }
     }
@@ -404,7 +405,7 @@ export const MusicPlayer: React.FC = () => {
       setToastMessage(`🎉 Đã thêm "${newSong.title}" & đồng bộ trên mọi thiết bị!`);
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err: any) {
-      console.error('Lỗi thêm nhạc YouTube:', err);
+      console.warn('Lỗi thêm nhạc YouTube:', err);
       setToastMessage(`⚠️ ${err.message || 'Không thể thêm bài từ YouTube. Bạn vui lòng kiểm tra lại link nhé!'}`);
       setTimeout(() => setToastMessage(null), 5000);
     } finally {
@@ -471,7 +472,7 @@ export const MusicPlayer: React.FC = () => {
       setToastMessage(`🎉 Đã tải "${newSong.title}" & đồng bộ trên mọi thiết bị!`);
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err: any) {
-      console.error('Lỗi tải Zing MP3:', err);
+      console.warn('Lỗi tải Zing MP3:', err);
       setToastMessage(`⚠️ ${err.message || 'Không thể tải bài hát từ Zing MP3. Hãy dùng tab Link YouTube nhé!'}`);
       setTimeout(() => setToastMessage(null), 5000);
     } finally {

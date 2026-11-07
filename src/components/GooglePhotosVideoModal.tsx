@@ -85,6 +85,7 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
   // Animation frame ref
   const animFrameRef = useRef<number | null>(null);
   const lastTimestampRef = useRef<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Lấy playlist nhạc
   useEffect(() => {
@@ -643,8 +644,9 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
         colors: ['#E8A598', '#D98A76', '#F9DCC4', '#C87D55']
       });
     } catch (err) {
-      console.error('Lỗi khi xuất video:', err);
-      alert('Không thể tạo file video trên trình duyệt này. Bạn có thể xem trực tiếp mượt mà ngay trên web nhé!');
+      console.warn('Lỗi khi xuất video:', err);
+      setToastMessage('Không thể tạo file video trên trình duyệt này. Bạn có thể bấm Phát để xem trực tiếp mượt mà ngay trên web nhé!');
+      setTimeout(() => setToastMessage(null), 6000);
     } finally {
       setIsExporting(false);
       setExportProgress(0);
@@ -698,6 +700,12 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
             </button>
           </div>
         </div>
+
+        {toastMessage && (
+          <div className="bg-amber-100 text-amber-900 border-b border-amber-200 px-4 py-2 text-xs text-center font-medium animate-fadeIn">
+            {toastMessage}
+          </div>
+        )}
 
         {/* MODAL BODY */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">

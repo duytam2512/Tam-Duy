@@ -61,7 +61,7 @@ export function usePWAInstall() {
         return true;
       }
     } catch (err) {
-      console.error('Lỗi khi mở hộp thoại cài đặt PWA:', err);
+      console.warn('Lỗi khi mở hộp thoại cài đặt PWA:', err);
     }
     return false;
   };

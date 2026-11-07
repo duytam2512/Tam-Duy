@@ -48,7 +48,7 @@ export const getStoredPlaylist = (): MusicTrack[] => {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PLAYLIST;
   } catch (err) {
-    console.error('Lỗi đọc playlist từ localStorage:', err);
+    console.warn('Lỗi đọc playlist từ localStorage:', err);
     return DEFAULT_PLAYLIST;
   }
 };
@@ -63,7 +63,7 @@ export const savePlaylistBoth = async (playlist: MusicTrack[]): Promise<void> =>
   try {
     localStorage.setItem(PLAYLIST_KEY, JSON.stringify(playlist));
   } catch (err) {
-    console.error('Lỗi lưu playlist vào localStorage:', err);
+    console.warn('Lỗi lưu playlist vào localStorage:', err);
   }
 
   // 2. Đồng bộ lên Firestore để các thiết bị khác nhận được ngay lập tức
@@ -96,7 +96,7 @@ export const subscribeToSharedPlaylist = (
           try {
             localStorage.setItem(PLAYLIST_KEY, JSON.stringify(data.tracks));
           } catch (e) {
-            console.error(e);
+            console.warn('Lỗi cache playlist:', e);
           }
           onUpdate(data.tracks);
           return;
@@ -140,7 +140,7 @@ export const getStoredMemories = (): Memory[] => {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_MEMORIES;
   } catch (error) {
-    console.error('Lỗi khi đọc memories từ localStorage:', error);
+    console.warn('Lỗi khi đọc memories từ localStorage:', error);
     return INITIAL_MEMORIES;
   }
 };
@@ -149,7 +149,7 @@ export const saveMemoriesToStorage = (memories: Memory[]): void => {
   try {
     localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories));
   } catch (error) {
-    console.error('Lỗi khi lưu memories vào localStorage:', error);
+    console.warn('Lỗi khi lưu memories vào localStorage:', error);
   }
 };
 
@@ -234,7 +234,7 @@ export const getStoredCoupleInfo = (): CoupleInfo => {
     }
     return JSON.parse(raw);
   } catch (error) {
-    console.error('Lỗi khi đọc couple info:', error);
+    console.warn('Lỗi khi đọc couple info:', error);
     return DEFAULT_COUPLE_INFO;
   }
 };
@@ -243,7 +243,7 @@ export const saveCoupleInfoBoth = async (info: CoupleInfo): Promise<void> => {
   try {
     localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
   } catch (error) {
-    console.error('Lỗi khi lưu couple info:', error);
+    console.warn('Lỗi khi lưu couple info:', error);
   }
 
   try {
@@ -313,7 +313,7 @@ export const getStoredBackgroundSettings = (): BackgroundSettings => {
     }
     return JSON.parse(raw);
   } catch (error) {
-    console.error('Lỗi khi đọc background settings:', error);
+    console.warn('Lỗi khi đọc background settings:', error);
     return DEFAULT_BG_SETTINGS;
   }
 };
@@ -322,7 +322,7 @@ export const saveBackgroundSettingsBoth = async (settings: BackgroundSettings): 
   try {
     localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(settings));
   } catch (error) {
-    console.error('Lỗi khi lưu background settings:', error);
+    console.warn('Lỗi khi lưu background settings:', error);
   }
 
   try {

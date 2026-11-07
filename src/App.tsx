@@ -56,7 +56,7 @@ export function App() {
       try {
         localStorage.setItem('goc_nho_snow', String(next));
       } catch (err) {
-        console.error('Lỗi lưu trạng thái tuyết rơi:', err);
+        console.warn('Lỗi lưu trạng thái tuyết rơi:', err);
       }
       return next;
     });

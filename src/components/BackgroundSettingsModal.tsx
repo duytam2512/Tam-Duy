@@ -52,7 +52,7 @@ export const BackgroundSettingsModal: React.FC<BackgroundSettingsModalProps> = (
         imageUrl: compressed,
       });
     } catch (err) {
-      console.error('Lỗi khi nén ảnh hình nền:', err);
+      console.warn('Lỗi khi nén ảnh hình nền:', err);
     } finally {
       setIsUploading(false);
     }
