@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen, Snowflake, Film, Book } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen, Snowflake, Film, Book, Type } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
 import { BrandLogo } from './BrandLogo';
@@ -16,6 +16,7 @@ interface HeaderHeroProps {
   onOpenReadingMode: () => void;
   onOpenVideoMaker: () => void;
   onOpenHandwrittenJournal: () => void;
+  onOpenFontModal: () => void;
   isSnowing: boolean;
   onToggleSnow: () => void;
 }
@@ -31,6 +32,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   onOpenReadingMode,
   onOpenVideoMaker,
   onOpenHandwrittenJournal,
+  onOpenFontModal,
   isSnowing,
   onToggleSnow
 }) => {
@@ -147,10 +149,21 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
             <span className="hidden sm:inline">{isSnowing ? 'Tuyết: Bật' : 'Tuyết'}</span>
           </button>
 
+          {/* Nút Đổi Font Chữ */}
+          <button
+            onClick={onOpenFontModal}
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#8C6D58] hover:text-[#3D2E28] bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-[#8C6D58]/20 shadow-2xs transition-all cursor-pointer"
+            title="Đổi kiểu font chữ lãng mạn cho nhật ký và kỷ niệm"
+          >
+            <Type className="w-3.5 h-3.5 text-[#D98A76]" />
+            <span className="hidden sm:inline">Đổi Font</span>
+            <span className="sm:hidden">Font</span>
+          </button>
+
           {/* Nút Đổi Hình Nền Web */}
           <button
             onClick={onOpenBackgroundModal}
-            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#8C6D58] hover:text-[#3D2E28] bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-[#8C6D58]/20 shadow-2xs transition-all"
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#8C6D58] hover:text-[#3D2E28] bg-[#FFFDF9]/95 hover:bg-[#F9F6F0] px-3 py-1.5 rounded-full border border-[#8C6D58]/20 shadow-2xs transition-all cursor-pointer"
             title="Đổi hình nền trang web và tinh chỉnh độ mờ"
           >
             <Palette className="w-3.5 h-3.5 text-[#D98A76]" />

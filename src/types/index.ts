@@ -27,6 +27,70 @@ export interface BackgroundSettings {
 
 export type ViewMode = 'masonry' | 'timeline';
 
+export type CaptionFont = 'caveat' | 'dancing' | 'patrick' | 'playfair' | 'vietnam' | 'sans';
+
+export interface FontOption {
+  id: CaptionFont;
+  name: string;
+  category: string;
+  cssClass: string;
+  previewText: string;
+  description: string;
+}
+
+export const FONT_OPTIONS: FontOption[] = [
+  {
+    id: 'caveat',
+    name: 'Viết tay tự nhiên (Caveat)',
+    category: 'Chữ viết tay',
+    cssClass: 'font-handwriting',
+    previewText: 'Anh yêu Em qua từng khoảnh khắc bình yên 💕',
+    description: 'Nét bút bi phóng khoáng, dễ thương và mộc mạc'
+  },
+  {
+    id: 'dancing',
+    name: 'Thư pháp mềm mại (Dancing Script)',
+    category: 'Lãng mạn',
+    cssClass: 'font-dancing',
+    previewText: 'Tình yêu dịu dàng như một khúc tình ca ✨',
+    description: 'Nét lượn sóng bay bổng, lãng mạn và ngọt ngào'
+  },
+  {
+    id: 'patrick',
+    name: 'Bút dạ học trò (Patrick Hand)',
+    category: 'Dễ thương',
+    cssClass: 'font-patrick',
+    previewText: 'Cùng nhau đi qua bốn mùa thương nhớ 🌸',
+    description: 'Nét tròn đầy, trẻ trung và ngập tràn năng lượng'
+  },
+  {
+    id: 'playfair',
+    name: 'Thơ mộng cổ điển (Playfair Display)',
+    category: 'Có chân sang trọng',
+    cssClass: 'font-serif-romantic',
+    previewText: 'Mỗi khoảnh khắc bên em đều là vĩnh cửu 🕊️',
+    description: 'Nét chân thanh thoát, quý phái như trang sách tình thơ'
+  },
+  {
+    id: 'vietnam',
+    name: 'Việt Pro thanh lịch (Be Vietnam Pro)',
+    category: 'Hiện đại tinh tế',
+    cssClass: 'font-vietnam',
+    previewText: 'Bình yên là khi có anh và em bên cạnh 🍃',
+    description: 'Chuẩn tiếng Việt, nét chữ sắc nét, tinh tế và rất dễ đọc'
+  },
+  {
+    id: 'sans',
+    name: 'Tối giản hiện đại (Plus Jakarta Sans)',
+    category: 'Không chân tối giản',
+    cssClass: 'font-sans-modern',
+    previewText: 'Góc Nhỏ Bình Yên • Dành riêng cho hai bạn 🤍',
+    description: 'Phong cách tối giản, rõ ràng và thanh thoát'
+  }
+];
+
+export const DEFAULT_FONT: CaptionFont = 'caveat';
+
 export interface DiaryEntry {
   id: string;
   title: string;

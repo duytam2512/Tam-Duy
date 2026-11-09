@@ -13,7 +13,17 @@ import { GooglePhotosVideoModal } from './components/GooglePhotosVideoModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { HandwrittenJournalModal } from './components/HandwrittenJournalModal';
-import { Memory, CoupleInfo, BackgroundSettings, DEFAULT_BG_SETTINGS, DiaryEntry } from './types';
+import { FontSettingsModal } from './components/FontSettingsModal';
+import {
+  Memory,
+  CoupleInfo,
+  BackgroundSettings,
+  DEFAULT_BG_SETTINGS,
+  DiaryEntry,
+  CaptionFont,
+  FONT_OPTIONS,
+  DEFAULT_FONT
+} from './types';
 import {
   getStoredMemories,
   saveMemoriesToStorage,
@@ -28,7 +38,10 @@ import {
   subscribeToSharedBgSettings,
   getStoredDiaryEntries,
   saveDiaryEntriesBoth,
-  subscribeToSharedDiary
+  subscribeToSharedDiary,
+  getStoredFont,
+  saveFontBoth,
+  subscribeToSharedFont
 } from './services/storage';
 import { Heart, Plus, Sparkles, Palette, Book } from 'lucide-react';
 
@@ -39,6 +52,7 @@ export function App() {
     getStoredBackgroundSettings()
   );
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>(getStoredDiaryEntries());
+  const [currentFont, setCurrentFont] = useState<CaptionFont>(getStoredFont());
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isStandaloneOpen, setIsStandaloneOpen] = useState(false);
@@ -46,6 +60,7 @@ export function App() {
   const [isReadingModeOpen, setIsReadingModeOpen] = useState(false);
   const [isVideoMakerOpen, setIsVideoMakerOpen] = useState(false);
   const [isJournalOpen, setIsJournalOpen] = useState(false);
+  const [isFontModalOpen, setIsFontModalOpen] = useState(false);
   const [isSnowing, setIsSnowing] = useState(() => {
     try {
       return localStorage.getItem('goc_nho_snow') !== 'false';
@@ -94,6 +109,12 @@ export function App() {
       }
     });
 
+    const unsubFont = subscribeToSharedFont((sharedFont) => {
+      if (sharedFont) {
+        setCurrentFont(sharedFont);
+      }
+    });
+
     // Lắng nghe sự kiện đồng bộ tức thì giữa các tab / cửa sổ trình duyệt trên cùng thiết bị
     const handleStorageEvent = (e: StorageEvent) => {
       if (e.key === 'goc_nho_binh_yen_memories_v3' && e.newValue) {
@@ -120,6 +141,11 @@ export function App() {
           if (Array.isArray(parsed)) setDiaryEntries(parsed);
         } catch {}
       }
+      if (e.key === 'goc_nho_font_family_v1' && e.newValue) {
+        if (['caveat', 'dancing', 'patrick', 'playfair', 'vietnam', 'sans'].includes(e.newValue)) {
+          setCurrentFont(e.newValue as CaptionFont);
+        }
+      }
     };
 
     window.addEventListener('storage', handleStorageEvent);
@@ -129,9 +155,19 @@ export function App() {
       unsubCouple();
       unsubBg();
       unsubDiary();
+      unsubFont();
       window.removeEventListener('storage', handleStorageEvent);
     };
   }, []);
+
+  // Cập nhật font chữ
+  const handleUpdateFont = async (newFont: CaptionFont) => {
+    setCurrentFont(newFont);
+    await saveFontBoth(newFont);
+  };
+
+  const currentFontOption = FONT_OPTIONS.find((f) => f.id === currentFont) || FONT_OPTIONS[0];
+  const currentFontClass = currentFontOption.cssClass;
 
   // Tổng số lượt yêu thích
   const totalLikes = memories.reduce((acc, curr) => acc + (curr.likes || 0), 0);
@@ -270,6 +306,7 @@ export function App() {
           onOpenReadingMode={() => setIsReadingModeOpen(true)}
           onOpenVideoMaker={() => setIsVideoMakerOpen(true)}
           onOpenHandwrittenJournal={() => setIsJournalOpen(true)}
+          onOpenFontModal={() => setIsFontModalOpen(true)}
           isSnowing={isSnowing}
           onToggleSnow={handleToggleSnow}
         />
@@ -280,6 +317,7 @@ export function App() {
           coupleInfo={coupleInfo}
           onToggleLike={handleToggleLike}
           onDeleteMemory={handleDeleteMemory}
+          fontClass={currentFontClass}
           onOpenLightbox={(mem) => {
             const idx = memories.findIndex((m) => m.id === mem.id);
             if (idx !== -1) setSelectedLightboxIndex(idx);
@@ -316,10 +354,17 @@ export function App() {
             <span>Góc Nhỏ Bình Yên • Dành riêng cho hai bạn</span>
             <Heart className="w-3.5 h-3.5 text-[#E8A598] fill-[#E8A598]" />
           </div>
-          <p className="font-handwriting text-xl text-[#8C6D58]">
+          <p className={`${currentFontClass} text-xl sm:text-2xl text-[#8C6D58]`}>
             "Mong cho hai đứa luôn bình yên qua năm tháng."
           </p>
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => setIsFontModalOpen(true)}
+              className="text-[11px] text-[#8C6D58] hover:text-[#3D2E28] hover:underline"
+            >
+              ✍️ Đổi font chữ
+            </button>
+            <span className="text-[#8C6D58]/40">•</span>
             <button
               onClick={() => setIsBackgroundModalOpen(true)}
               className="text-[11px] text-[#8C6D58] hover:text-[#3D2E28] hover:underline"
@@ -353,6 +398,24 @@ export function App() {
         onSaveSettings={handleUpdateBackground}
       />
 
+      {/* Modal Tùy Chỉnh Font Chữ Lãng Mạn */}
+      <FontSettingsModal
+        isOpen={isFontModalOpen}
+        onClose={() => setIsFontModalOpen(false)}
+        currentFont={currentFont}
+        onSaveFont={handleUpdateFont}
+      />
+
+      {/* Modal Sổ Tay Viết Tay Lật Trang */}
+      <HandwrittenJournalModal
+        isOpen={isJournalOpen}
+        onClose={() => setIsJournalOpen(false)}
+        coupleInfo={coupleInfo}
+        entries={diaryEntries}
+        onSaveEntries={handleSaveDiaryEntries}
+        fontClass={currentFontClass}
+      />
+
       {/* Modal Phóng To Ảnh (Lightbox) */}
       {activeLightboxMemory && (
         <LightboxModal
@@ -363,6 +426,7 @@ export function App() {
           hasPrev={selectedLightboxIndex !== null && selectedLightboxIndex > 0}
           hasNext={selectedLightboxIndex !== null && selectedLightboxIndex < memories.length - 1}
           onToggleLike={handleToggleLike}
+          fontClass={currentFontClass}
           onOpenShare={(mem) => {
             setSelectedShareMemory(mem);
             setSelectedLightboxIndex(null);

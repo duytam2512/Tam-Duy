@@ -4,6 +4,8 @@ import {
   BackgroundSettings,
   MusicTrack,
   DiaryEntry,
+  CaptionFont,
+  DEFAULT_FONT,
   DEFAULT_COUPLE_INFO,
   DEFAULT_BG_SETTINGS,
   INITIAL_MEMORIES,
@@ -22,9 +24,11 @@ import {
 
 const PLAYLIST_KEY = 'goc_nho_playlist';
 const MEMORIES_KEY = 'goc_nho_binh_yen_memories_v3';
+const MEMORIES_SEEDED_KEY = 'goc_nho_memories_seeded_v3';
 const COUPLE_KEY = 'goc_nho_binh_yen_couple_v3';
 const BG_SETTINGS_KEY = 'goc_nho_binh_yen_bg_v3';
 const DIARY_KEY = 'goc_nho_binh_yen_diary_v1';
+const FONT_KEY = 'goc_nho_font_family_v1';
 
 // Helper enum và xử lý lỗi theo chuẩn Firebase Skill
 export enum OperationType {
@@ -136,15 +140,23 @@ export const subscribeToSharedPlaylist = (
 export const getStoredMemories = (): Memory[] => {
   try {
     const raw = localStorage.getItem(MEMORIES_KEY);
-    if (!raw) {
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed; // Trả về mảng (kể cả rỗng [] nếu người dùng đã xóa hết kỷ niệm)
+      }
+    }
+    // Chỉ khởi tạo 12 kỷ niệm mẫu ban đầu nếu máy CHƯA TỪNG được đánh dấu khởi tạo
+    const isSeeded = localStorage.getItem(MEMORIES_SEEDED_KEY);
+    if (!isSeeded) {
       localStorage.setItem(MEMORIES_KEY, JSON.stringify(INITIAL_MEMORIES));
+      localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
       return INITIAL_MEMORIES;
     }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_MEMORIES;
+    return [];
   } catch (error) {
     console.warn('Lỗi khi đọc memories từ localStorage:', error);
-    return INITIAL_MEMORIES;
+    return [];
   }
 };
 
@@ -158,11 +170,14 @@ export const saveMemoriesToStorage = (memories: Memory[]): void => {
 
 /**
  * Lắng nghe toàn bộ kỷ niệm từ Cloud Firestore theo thời gian thực
+ * Đảm bảo các điện thoại khác và laptop cùng thấy kỷ niệm mới ngay lập tức.
+ * Khi người dùng xóa kỷ niệm mặc định (mem-1 ... mem-12), hệ thống KHÔNG tự sinh lại!
  */
 export const subscribeToSharedMemories = (
   onUpdate: (memories: Memory[]) => void
 ): (() => void) => {
   const memoriesColRef = collection(db, 'memories');
+  const metaDocRef = doc(db, 'shared_data', 'meta');
 
   const unsubscribe = onSnapshot(
     memoriesColRef,
@@ -179,17 +194,42 @@ export const subscribeToSharedMemories = (
         // Sắp xếp kỷ niệm mới nhất lên đầu
         loaded.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+        localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
         saveMemoriesToStorage(loaded);
         onUpdate(loaded);
         return;
       }
 
-      // Nếu trên Cloud chưa có dữ liệu nào, khởi tạo bằng các kỷ niệm mẫu ban đầu
-      const local = getStoredMemories();
-      onUpdate(local);
+      // Snapshot rỗng (0 documents trên Cloud Firestore)
+      // Kiểm tra xem database đã từng được khởi tạo chưa để TRÁNH tự ý sinh lại kỷ niệm mặc định đã bị xóa
+      let isAlreadyInitialized = localStorage.getItem(MEMORIES_SEEDED_KEY) === 'true';
+
+      if (!isAlreadyInitialized) {
+        try {
+          const metaSnap = await getDoc(metaDocRef);
+          if (metaSnap.exists() && metaSnap.data()?.memoriesSeeded) {
+            isAlreadyInitialized = true;
+          }
+        } catch {
+          // Bỏ qua lỗi đọc meta
+        }
+      }
+
+      if (isAlreadyInitialized) {
+        // Người dùng đã chủ động xóa hết các kỷ niệm mặc định! Giữ danh sách rỗng, không tự tạo lại
+        saveMemoriesToStorage([]);
+        onUpdate([]);
+        return;
+      }
+
+      // Đây là lần đầu tiên hệ thống chạy trên database mới tinh -> Khởi tạo 12 kỷ niệm mẫu ban đầu
+      localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
+      const initialBatch = INITIAL_MEMORIES.slice(0, 12);
+      saveMemoriesToStorage(initialBatch);
+      onUpdate(initialBatch);
 
       try {
-        const initialBatch = local.slice(0, 12);
+        await setDoc(metaDocRef, { memoriesSeeded: true, createdAt: Date.now() }, { merge: true });
         for (const mem of initialBatch) {
           await setDoc(doc(db, 'memories', mem.id), mem);
         }
@@ -206,22 +246,86 @@ export const subscribeToSharedMemories = (
   return unsubscribe;
 };
 
-export const saveSharedMemory = async (memory: Memory): Promise<void> => {
+export const saveSharedMemory = async (memory: Memory): Promise<boolean> => {
   try {
     const memDocRef = doc(db, 'memories', memory.id);
     await setDoc(memDocRef, memory);
+    return true;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `memories/${memory.id}`);
+    throw err;
   }
 };
 
-export const deleteSharedMemory = async (id: string): Promise<void> => {
+export const deleteSharedMemory = async (id: string): Promise<boolean> => {
   try {
     const memDocRef = doc(db, 'memories', id);
     await deleteDoc(memDocRef);
+    return true;
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `memories/${id}`);
+    return false;
   }
+};
+
+/* =========================================================================
+   2.1. ĐỒNG BỘ PHONG CÁCH FONT CHỮ (TYPOGRAPHY)
+   ========================================================================= */
+
+export const getStoredFont = (): CaptionFont => {
+  try {
+    const raw = localStorage.getItem(FONT_KEY) as CaptionFont | null;
+    if (raw && ['caveat', 'dancing', 'patrick', 'playfair', 'vietnam', 'sans'].includes(raw)) {
+      return raw;
+    }
+    return DEFAULT_FONT;
+  } catch {
+    return DEFAULT_FONT;
+  }
+};
+
+export const saveFontBoth = async (font: CaptionFont): Promise<void> => {
+  try {
+    localStorage.setItem(FONT_KEY, font);
+  } catch (err) {
+    console.warn('Lỗi lưu font vào localStorage:', err);
+  }
+
+  try {
+    const fontDocRef = doc(db, 'shared_data', 'typography');
+    await setDoc(fontDocRef, {
+      font,
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'shared_data/typography');
+  }
+};
+
+export const subscribeToSharedFont = (
+  onUpdate: (font: CaptionFont) => void
+): (() => void) => {
+  const fontDocRef = doc(db, 'shared_data', 'typography');
+
+  const unsubscribe = onSnapshot(
+    fontDocRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && data.font && ['caveat', 'dancing', 'patrick', 'playfair', 'vietnam', 'sans'].includes(data.font)) {
+          try {
+            localStorage.setItem(FONT_KEY, data.font);
+          } catch {}
+          onUpdate(data.font);
+        }
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, 'shared_data/typography');
+    }
+  );
+
+  return unsubscribe;
 };
 
 /* =========================================================================
@@ -438,22 +542,53 @@ export const subscribeToSharedDiary = (
 };
 
 /**
- * Nén ảnh trước khi lưu để tối ưu tải trang cho web và đảm bảo đồng bộ Cloud Firestore mượt mà
- * Hỗ trợ nén ảnh chụp trực tiếp từ camera điện thoại (iPhone, Android) dung lượng lớn về mức an toàn (< 600KB)
+ * Nén ảnh trước khi lưu để tối ưu tải trang cho web và đảm bảo đồng bộ Cloud Firestore mượt mà.
+ * Đặc biệt tối ưu cho iPhone (Safari iOS, HEIC/JPEG camera 48MP dung lượng 20MB)
+ * Đảm bảo dung lượng base64 luôn < 180KB, không bị vượt quá giới hạn 1MB của tài liệu Firestore
+ * và không bị tràn bộ nhớ Safari trên điện thoại!
  */
-export const compressImageFile = (file: File, maxWidth = 1200, quality = 0.8): Promise<string> => {
+export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): Promise<string> => {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        let width = img.width;
-        let height = img.height;
+    // 1. Dùng URL.createObjectURL để tránh tốn hàng chục MB RAM của trình duyệt di động
+    let objectUrl = '';
+    let isObjectUrlUsed = false;
 
-        // Giới hạn chiều rộng tối đa
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
+    try {
+      objectUrl = URL.createObjectURL(file);
+      isObjectUrlUsed = true;
+    } catch {
+      // Nếu createObjectURL không hỗ trợ, fallback sang FileReader
+    }
+
+    const cleanUp = () => {
+      if (isObjectUrlUsed && objectUrl) {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {}
+      }
+    };
+
+    const processImageElement = (img: HTMLImageElement) => {
+      try {
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (!width || !height) {
+          cleanUp();
+          reject(new Error('Kích thước ảnh không hợp lệ'));
+          return;
+        }
+
+        // Giới hạn kích thước tối đa 960px để ảnh sắc nét trên màn hình Retina mà dung lượng cực nhẹ
+        const maxDim = maxWidth;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
         }
 
         const canvas = document.createElement('canvas');
@@ -462,46 +597,77 @@ export const compressImageFile = (file: File, maxWidth = 1200, quality = 0.8): P
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          resolve(e.target?.result as string);
+          cleanUp();
+          reject(new Error('Không thể khởi tạo bộ xử lý ảnh 2D'));
           return;
         }
 
+        // Vẽ ảnh lên canvas với làm mịn chất lượng cao
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
+        cleanUp();
 
-        // Thử nén sang WebP trước (tỷ lệ nén tốt nhất)
-        let outputUrl = '';
-        try {
-          const webpUrl = canvas.toDataURL('image/webp', quality);
-          if (webpUrl.startsWith('data:image/webp')) {
-            outputUrl = webpUrl;
-          }
-        } catch {
-          // fallback jpeg
-        }
+        // Sử dụng image/jpeg chuẩn - tương thích 100% mọi dòng iPhone, iPad, Android & Web
+        let outputUrl = canvas.toDataURL('image/jpeg', quality);
 
-        if (!outputUrl) {
-          outputUrl = canvas.toDataURL('image/jpeg', quality);
-        }
-
-        // Nếu chuỗi base64 vẫn lớn hơn 700KB (quá nặng cho 1 Firestore doc 1MB), nén thêm một bước
-        if (outputUrl.length > 700000) {
+        // Nếu chuỗi base64 vẫn lớn hơn 200KB (~150KB nhị phân), nén thêm một bước nữa
+        // để đảm bảo khi đăng Album 3-5 ảnh không bao giờ vượt quá 1MB của Firestore
+        if (outputUrl.length > 200000) {
           const secondCanvas = document.createElement('canvas');
-          const scale = 0.75;
+          const scale = 0.8;
           secondCanvas.width = Math.round(width * scale);
           secondCanvas.height = Math.round(height * scale);
           const secondCtx = secondCanvas.getContext('2d');
           if (secondCtx) {
+            secondCtx.imageSmoothingEnabled = true;
+            secondCtx.imageSmoothingQuality = 'medium';
             secondCtx.drawImage(canvas, 0, 0, secondCanvas.width, secondCanvas.height);
-            outputUrl = secondCanvas.toDataURL('image/jpeg', 0.72);
+            outputUrl = secondCanvas.toDataURL('image/jpeg', 0.68);
           }
         }
 
         resolve(outputUrl);
-      };
-      img.onerror = reject;
-      img.src = e.target?.result as string;
+      } catch (err) {
+        cleanUp();
+        reject(err);
+      }
     };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = () => {
+      processImageElement(img);
+    };
+
+    img.onerror = () => {
+      cleanUp();
+      // Thử đọc bằng FileReader nếu ObjectURL bị lỗi
+      try {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const fallbackImg = new Image();
+          fallbackImg.onload = () => processImageElement(fallbackImg);
+          fallbackImg.onerror = () => reject(new Error('Không thể đọc file ảnh này trên thiết bị.'));
+          fallbackImg.src = e.target?.result as string;
+        };
+        reader.onerror = () => reject(new Error('Lỗi khi đọc file ảnh từ máy.'));
+        reader.readAsDataURL(file);
+      } catch {
+        reject(new Error('Thiết bị không hỗ trợ định dạng ảnh này.'));
+      }
+    };
+
+    if (isObjectUrlUsed && objectUrl) {
+      img.src = objectUrl;
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    }
   });
 };

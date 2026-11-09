@@ -24,6 +24,7 @@ interface LightboxModalProps {
   hasNext: boolean;
   onToggleLike: (id: string) => void;
   onOpenShare: (memory: Memory) => void;
+  fontClass?: string;
 }
 
 export const LightboxModal: React.FC<LightboxModalProps> = ({
@@ -34,7 +35,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   hasPrev,
   hasNext,
   onToggleLike,
-  onOpenShare
+  onOpenShare,
+  fontClass = 'font-handwriting'
 }) => {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -244,7 +246,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             </button>
           </div>
 
-          <p className="font-handwriting text-xl sm:text-2xl text-[#3D2E28] leading-relaxed">
+          <p className={`${fontClass} text-xl sm:text-2xl text-[#3D2E28] leading-relaxed`}>
             "{memory.caption}"
           </p>
         </div>

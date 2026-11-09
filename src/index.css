@@ -25,6 +25,22 @@
   font-family: "Caveat", cursive;
 }
 
+.font-dancing {
+  font-family: "Dancing Script", cursive;
+}
+
+.font-patrick {
+  font-family: "Patrick Hand", cursive;
+}
+
+.font-vietnam {
+  font-family: "Be Vietnam Pro", system-ui, sans-serif;
+}
+
+.font-sans-modern {
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+}
+
 /* Warm Pastel Gradient Backgrounds */
 .bg-pastel-warm {
   background: radial-gradient(circle at 10% 10%, rgba(232, 165, 152, 0.15) 0%, transparent 45%),

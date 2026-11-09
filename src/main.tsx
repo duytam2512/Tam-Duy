@@ -3,35 +3,18 @@ import App from './App.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 
-// Chỉ đăng ký Service Worker trong môi trường production (tránh lỗi 404 sw.js khi dev trong iframe)
+// Chỉ đăng ký Service Worker trong môi trường production khi người dùng truy cập web thực tế
 if (import.meta.env.PROD && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   try {
-    const updateSW = registerSW({
-      immediate: true,
+    registerSW({
+      immediate: false,
       onNeedRefresh() {
-        // Tải lại khi có phiên bản mới
-        updateSW(true);
+        // Không tự động giật màn hình hoặc reload giữa chừng khi người dùng đang nhập liệu hoặc đăng ảnh
+        console.log('[PWA] Đã có bản cập nhật mới sẵn sàng cho phiên tiếp theo');
       },
       onOfflineReady() {
         console.log('[PWA] Sẵn sàng hoạt động ngoại tuyến');
       },
-      onRegisteredSW(swUrl, registration) {
-        if (registration) {
-          setInterval(() => {
-            registration.update().catch(() => {});
-          }, 60000);
-        }
-      },
-    });
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        navigator.serviceWorker.ready
-          .then((reg) => {
-            reg.update().catch(() => {});
-          })
-          .catch(() => {});
-      }
     });
   } catch (err) {
     console.warn('[PWA] Bỏ qua đăng ký service worker:', err);

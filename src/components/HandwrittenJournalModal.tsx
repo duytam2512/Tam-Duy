@@ -37,6 +37,7 @@ interface HandwrittenJournalModalProps {
   coupleInfo: CoupleInfo;
   entries: DiaryEntry[];
   onSaveEntries: (entries: DiaryEntry[]) => void;
+  fontClass?: string;
 }
 
 // Danh sách biểu tượng thời tiết & tâm trạng
@@ -64,7 +65,8 @@ export const HandwrittenJournalModal: React.FC<HandwrittenJournalModalProps> = (
   onClose,
   coupleInfo,
   entries = INITIAL_DIARY_ENTRIES,
-  onSaveEntries
+  onSaveEntries,
+  fontClass = 'font-handwriting'
 }) => {
   // Trang hiện tại (0 là Bìa/Mục lục, 1..N là các bài viết)
   const [currentPage, setCurrentPage] = useState<number>(0);

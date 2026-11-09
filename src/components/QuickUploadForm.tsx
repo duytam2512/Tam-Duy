@@ -32,7 +32,7 @@ interface QuickUploadFormProps {
     memory:
       | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>
       | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>[]
-  ) => void;
+  ) => Promise<void> | void;
   isOpen: boolean;
   onClose: () => void;
   coupleInfo: CoupleInfo;
@@ -85,7 +85,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
   const activeImage = images[activeImageIndex] || images[0] || '';
 
-  // Xử lý khi người dùng chọn nhiều file ảnh từ máy / điện thoại
+  // Xử lý khi người dùng chọn nhiều file ảnh từ máy / điện thoại (đặc biệt tối ưu hóa iPhone)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -95,16 +95,16 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
     try {
       const compressedList = await Promise.all(
-        files.map((file) => compressImageFile(file, 1280, 0.85))
+        files.map((file) => compressImageFile(file, 960, 0.75))
       );
       setImages((prev) => {
         const next = [...prev, ...compressedList];
         if (prev.length === 0) setActiveImageIndex(0);
         return next;
       });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Lỗi nén ảnh:', err);
-      setValidationError('Không thể xử lý một số ảnh. Bạn vui lòng thử lại nhé!');
+      setValidationError(err?.message || 'Không thể xử lý một số ảnh từ thiết bị. Bạn vui lòng thử lại nhé!');
     } finally {
       setIsCompressing(false);
       if (fileInputRef.current) {
@@ -126,21 +126,24 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     e.preventDefault();
     setIsDragging(false);
     setValidationError(null);
-    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    const files = Array.from(e.dataTransfer.files).filter(
+      (f) => f.type.startsWith('image/') || f.name.match(/\.(jpg|jpeg|png|webp|heic|heif)$/i)
+    );
     if (files.length === 0) return;
 
     setIsCompressing(true);
     try {
       const compressedList = await Promise.all(
-        files.map((file) => compressImageFile(file, 1280, 0.85))
+        files.map((file) => compressImageFile(file, 960, 0.75))
       );
       setImages((prev) => {
         const next = [...prev, ...compressedList];
         if (prev.length === 0) setActiveImageIndex(0);
         return next;
       });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Lỗi khi nén ảnh kéo thả:', err);
+      setValidationError(err?.message || 'Không thể xử lý ảnh kéo thả.');
     } finally {
       setIsCompressing(false);
     }
@@ -258,7 +261,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     setCaption((prev) => (prev ? `${prev} ${emoji}` : emoji));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
 
@@ -273,48 +276,57 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
     setIsSubmitting(true);
 
-    const memoryLocation = location.trim() || 'Một nơi bình yên';
-    const memoryTag = selectedTag || 'Kỷ niệm';
-    const memoryDate = date || new Date().toISOString().split('T')[0];
+    try {
+      const memoryLocation = location.trim() || 'Một nơi bình yên';
+      const memoryTag = selectedTag || 'Kỷ niệm';
+      const memoryDate = date || new Date().toISOString().split('T')[0];
 
-    if (uploadMode === 'album' || images.length === 1) {
-      // 1 bài viết album có nhiều ảnh
-      onAddMemory({
-        imageUrl: images[0],
-        images: images,
-        date: memoryDate,
-        location: memoryLocation,
-        caption: caption.trim(),
-        tag: memoryTag
+      if (uploadMode === 'album' || images.length === 1) {
+        // 1 bài viết album có nhiều ảnh
+        await onAddMemory({
+          imageUrl: images[0],
+          images: images,
+          date: memoryDate,
+          location: memoryLocation,
+          caption: caption.trim(),
+          tag: memoryTag
+        });
+      } else {
+        // Đăng thành nhiều bài viết riêng biệt (mỗi ảnh 1 bài)
+        const list = images.map((imgUrl, i) => ({
+          imageUrl: imgUrl,
+          images: [imgUrl],
+          date: memoryDate,
+          location: memoryLocation,
+          caption: images.length > 1 ? `${caption.trim()} (Ảnh #${i + 1})` : caption.trim(),
+          tag: memoryTag
+        }));
+        await onAddMemory(list);
+      }
+
+      confetti({
+        particleCount: 60,
+        spread: 75,
+        origin: { y: 0.6 },
+        colors: ['#E8A598', '#F9DCC4', '#D98A76']
       });
-    } else {
-      // Đăng thành nhiều bài viết riêng biệt (mỗi ảnh 1 bài)
-      const list = images.map((imgUrl, i) => ({
-        imageUrl: imgUrl,
-        images: [imgUrl],
-        date: memoryDate,
-        location: memoryLocation,
-        caption: images.length > 1 ? `${caption.trim()} (Ảnh #${i + 1})` : caption.trim(),
-        tag: memoryTag
-      }));
-      onAddMemory(list);
+
+      // Reset form
+      setImages([]);
+      setCaption('');
+      setLocation('');
+      setAiSuggestions([]);
+      setShowAiPanel(false);
+      onClose();
+    } catch (err: any) {
+      console.error('Lỗi khi đăng kỷ niệm:', err);
+      setValidationError(
+        err?.message ||
+          'Không thể lưu kỷ niệm lên Cloud Firestore. Bạn vui lòng kiểm tra kết nối mạng và thử lại nhé!'
+      );
+    } finally {
+      setIsSubmitting(false);
     }
-
-    confetti({
-      particleCount: 60,
-      spread: 75,
-      origin: { y: 0.6 },
-      colors: ['#E8A598', '#F9DCC4', '#D98A76']
-    });
-
-    setIsSubmitting(false);
-    // Reset form
-    setImages([]);
-    setCaption('');
-    setLocation('');
-    setAiSuggestions([]);
-    setShowAiPanel(false);
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -531,15 +543,14 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                   ))}
 
                   {/* Nút thêm ảnh vào danh sách */}
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
+                  <label
+                    htmlFor="memory-upload-input-field"
                     className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl border-2 border-dashed border-[#D98A76]/50 hover:border-[#D98A76] bg-[#E8A598]/10 hover:bg-[#E8A598]/20 flex flex-col items-center justify-center text-[#D98A76] transition-all shrink-0 cursor-pointer"
                     title="Chọn thêm ảnh từ máy"
                   >
                     <Plus className="w-5 h-5" />
                     <span className="text-[10px] font-semibold mt-0.5">Thêm ảnh</span>
-                  </button>
+                  </label>
 
                   {/* Nút xóa tất cả */}
                   <button
@@ -612,12 +623,12 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 )}
               </div>
             ) : (
-              <div
+              <label
+                htmlFor="memory-upload-input-field"
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all block ${
                   isDragging
                     ? 'border-[#D98A76] bg-[#E8A598]/15 scale-[0.99]'
                     : 'border-[#8C6D58]/25 hover:border-[#E8A598] bg-white hover:bg-[#FAF6F0]'
@@ -627,28 +638,29 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                   <Camera className="w-6 h-6" />
                 </div>
                 <p className="text-xs sm:text-sm font-semibold text-[#3D2E28]">
-                  Bấm để chọn nhiều ảnh từ điện thoại / máy tính hoặc kéo thả vào đây
+                  Chạm để chọn ảnh từ iPhone / Android / Máy tính (hỗ trợ chọn nhiều ảnh)
                 </p>
                 <p className="text-[11px] text-[#8C6D58] mt-1">
-                  💡 Bạn có thể chọn <span className="text-[#D98A76] font-semibold">nhiều ảnh cùng lúc</span> để đăng thành album kỷ niệm xinh xắn
+                  💡 Bạn có thể chọn <span className="text-[#D98A76] font-semibold">nhiều ảnh cùng lúc</span> từ thư viện hoặc chụp ảnh mới
                 </p>
                 {isCompressing && (
                   <div className="mt-2 text-xs text-[#D98A76] font-medium flex items-center justify-center gap-1.5 animate-pulse">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Đang tối ưu dung lượng ảnh...</span>
+                    <span>Đang xử lý và tối ưu dung lượng ảnh...</span>
                   </div>
                 )}
-              </div>
+              </label>
             )}
 
-            {/* Input file ẩn hỗ trợ multiple */}
+            {/* Input file hỗ trợ đầy đủ các định dạng di động (HEIC, HEIF, JPG, PNG) */}
             <input
+              id="memory-upload-input-field"
               ref={fileInputRef}
               type="file"
               multiple
-              accept="image/*"
+              accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
               onChange={handleFileChange}
-              className="hidden"
+              className="sr-only"
             />
           </div>
 

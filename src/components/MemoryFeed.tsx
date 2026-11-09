@@ -25,6 +25,7 @@ interface MemoryFeedProps {
   onOpenLightbox: (memory: Memory) => void;
   onOpenShare: (memory: Memory) => void;
   onOpenQuickUpload: () => void;
+  fontClass?: string;
 }
 
 export const MemoryFeed: React.FC<MemoryFeedProps> = ({
@@ -34,12 +35,14 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
   onDeleteMemory,
   onOpenLightbox,
   onOpenShare,
-  onOpenQuickUpload
+  onOpenQuickUpload,
+  fontClass = 'font-handwriting'
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('masonry');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState('Tất cả');
   const [selectedYear, setSelectedYear] = useState('all');
+  const [memoryToDelete, setMemoryToDelete] = useState<Memory | null>(null);
 
   // Lấy danh sách các năm có kỷ niệm
   const availableYears = useMemo(() => {
@@ -254,7 +257,7 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                   </div>
 
                   {/* Caption / Diary */}
-                  <p className="font-handwriting text-xl sm:text-2xl text-[#3D2E28] leading-snug line-clamp-3">
+                  <p className={`${fontClass} text-xl sm:text-2xl text-[#3D2E28] leading-snug line-clamp-3`}>
                     "{item.caption}"
                   </p>
                 </div>
@@ -289,12 +292,9 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                   </button>
 
                   <button
-                    onClick={() => {
-                      if (confirm('Bạn có chắc muốn xóa kỷ niệm này không?')) {
-                        onDeleteMemory(item.id);
-                      }
-                    }}
-                    className="p-1.5 text-[#8C6D58]/60 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                    type="button"
+                    onClick={() => setMemoryToDelete(item)}
+                    className="p-1.5 text-[#8C6D58]/60 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
                     title="Xóa kỷ niệm"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -366,7 +366,7 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                         </span>
                       </div>
 
-                      <p className="font-handwriting text-2xl text-[#3D2E28] leading-relaxed my-2">
+                      <p className={`${fontClass} text-2xl text-[#3D2E28] leading-relaxed my-2`}>
                         "{item.caption}"
                       </p>
                     </div>
@@ -398,10 +398,10 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                           <span>Khung ảnh</span>
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm('Xóa kỷ niệm này?')) onDeleteMemory(item.id);
-                          }}
-                          className="p-1 text-[#8C6D58]/50 hover:text-rose-600 rounded-lg"
+                          type="button"
+                          onClick={() => setMemoryToDelete(item)}
+                          className="p-1 text-[#8C6D58]/50 hover:text-rose-600 rounded-lg cursor-pointer"
+                          title="Xóa kỷ niệm"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -412,6 +412,50 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* MODAL XÁC NHẬN XÓA KỶ NIỆM (Đảm bảo xóa thành công cả kỷ niệm mặc định lẫn tự đăng) */}
+      {memoryToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-[#FFFDF9] rounded-3xl border border-[#8C6D58]/20 shadow-2xl max-w-sm w-full p-6 text-center card-warm-pastel">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center border border-rose-200">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="font-serif-romantic text-xl font-bold text-[#3D2E28] mb-1.5">
+              Xác nhận xóa kỷ niệm?
+            </h3>
+            <p className="text-xs text-[#8C6D58] mb-4 leading-relaxed">
+              Kỷ niệm này sẽ được xóa vĩnh viễn khỏi hệ thống trên tất cả các điện thoại và máy tính của hai bạn.
+            </p>
+            {memoryToDelete.caption && (
+              <div className="p-3 bg-[#FAF6F0] rounded-xl border border-[#8C6D58]/15 mb-5 text-left">
+                <p className={`${fontClass} text-sm text-[#3D2E28] line-clamp-2`}>
+                  "{memoryToDelete.caption}"
+                </p>
+              </div>
+            )}
+            <div className="flex items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setMemoryToDelete(null)}
+                className="flex-1 py-2 px-3 text-xs font-semibold text-[#8C6D58] hover:text-[#3D2E28] bg-[#F9F6F0] rounded-xl transition-all cursor-pointer"
+              >
+                Giữ lại
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = memoryToDelete.id;
+                  setMemoryToDelete(null);
+                  onDeleteMemory(id);
+                }}
+                className="flex-1 py-2 px-3 text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                Xóa vĩnh viễn
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </section>
