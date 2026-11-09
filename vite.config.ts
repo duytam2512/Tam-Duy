@@ -11,7 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'prompt',
-        includeAssets: ['apple-touch-icon.png', 'icon.svg', 'robots.txt', 'sitemap.xml'],
+        includeAssets: ['app-logo.png', 'apple-touch-icon.png', 'favicon-32x32.png', 'icon.svg', 'robots.txt', 'sitemap.xml'],
         manifest: {
           id: '/',
           name: 'Góc Nhỏ Bình Yên • Album Kỷ Niệm',

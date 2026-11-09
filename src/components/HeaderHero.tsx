@@ -214,7 +214,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
 
         {/* Title & Slogan with Logo Icon */}
         <div className="flex items-center justify-center gap-3 mb-2">
-          <BrandLogo size={42} className="w-9 h-9 sm:w-11 sm:h-11" />
+          <BrandLogo size={48} className="w-10 h-10 sm:w-12 sm:h-12" showHeartBadge={true} />
           <h1 className="font-serif-romantic text-3xl sm:text-5xl font-bold tracking-tight text-[#3D2E28]">
             Góc Nhỏ Bình Yên
           </h1>
