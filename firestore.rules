@@ -11,6 +11,11 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    // Kiểm tra kết nối hệ thống (test connection)
+    match /test/{docId} {
+      allow read: if isValidId(docId);
+    }
+
     // Collection lưu dữ liệu dùng chung (playlist, couple info, background)
     match /shared_data/{docId} {
       allow read: if isValidId(docId);

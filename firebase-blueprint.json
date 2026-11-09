@@ -103,6 +103,12 @@
         "$ref": "#/entities/Memory"
       },
       "description": "Bộ sưu tập các kỷ niệm tình yêu của hai đứa"
+    },
+    "/test/{docId}": {
+      "schema": {
+        "$ref": "#/entities/CoupleConfig"
+      },
+      "description": "Tài liệu kiểm tra kết nối Firestore khi khởi động ứng dụng"
     }
   }
 }
