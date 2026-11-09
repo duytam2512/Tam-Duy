@@ -13,7 +13,8 @@ import {
   Filter,
   Sparkles,
   ChevronDown,
-  Layers
+  Layers,
+  Type
 } from 'lucide-react';
 import { Memory, ViewMode, POPULAR_TAGS, CoupleInfo } from '../types';
 
@@ -26,6 +27,7 @@ interface MemoryFeedProps {
   onOpenShare: (memory: Memory) => void;
   onOpenQuickUpload: () => void;
   fontClass?: string;
+  onOpenFontModal?: () => void;
 }
 
 export const MemoryFeed: React.FC<MemoryFeedProps> = ({
@@ -36,7 +38,8 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
   onOpenLightbox,
   onOpenShare,
   onOpenQuickUpload,
-  fontClass = 'font-handwriting'
+  fontClass = 'font-handwriting',
+  onOpenFontModal
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('masonry');
   const [searchQuery, setSearchQuery] = useState('');
@@ -154,6 +157,19 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                 <span className="hidden sm:inline">Dòng Thời Gian</span>
               </button>
             </div>
+
+            {/* Quick Font Switcher */}
+            {onOpenFontModal && (
+              <button
+                type="button"
+                onClick={onOpenFontModal}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-[#F9F6F0] border border-[#8C6D58]/20 text-[#8C6D58] hover:text-[#3D2E28] text-xs font-semibold transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Đổi kiểu chữ viết tay / nhật ký cho toàn bộ kỷ niệm"
+              >
+                <Type className="w-3.5 h-3.5 text-[#D98A76]" />
+                <span className="hidden md:inline">Đổi Phông Chữ</span>
+              </button>
+            )}
           </div>
         </div>
 

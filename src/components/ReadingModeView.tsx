@@ -18,7 +18,7 @@ import {
   Scroll,
   Layers
 } from 'lucide-react';
-import { Memory, CoupleInfo } from '../types';
+import { Memory, CoupleInfo, CaptionFont } from '../types';
 import { BrandLogo } from './BrandLogo';
 
 interface ReadingModeViewProps {
@@ -26,13 +26,19 @@ interface ReadingModeViewProps {
   onClose: () => void;
   memories: Memory[];
   coupleInfo: CoupleInfo;
+  fontClass?: string;
+  currentFont?: CaptionFont;
+  onOpenFontModal?: () => void;
 }
 
 export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
   isOpen,
   onClose,
   memories,
-  coupleInfo
+  coupleInfo,
+  fontClass = 'font-handwriting',
+  currentFont = 'caveat',
+  onOpenFontModal
 }) => {
   const [currentPage, setCurrentPage] = useState(0);
   const [readingTheme, setReadingTheme] = useState<'cream' | 'sepia' | 'night'>('cream');
@@ -171,6 +177,18 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
               <span className="text-[10px] uppercase font-semibold">{fontSize}</span>
             </button>
 
+            {/* Font Style Switcher */}
+            {onOpenFontModal && (
+              <button
+                onClick={onOpenFontModal}
+                className="p-1.5 px-2.5 rounded-xl border border-current/15 text-xs flex items-center gap-1 hover:bg-black/5"
+                title="Đổi kiểu phông chữ cảm xúc / viết tay"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#D98A76]" />
+                <span className="text-[10px] uppercase font-semibold hidden sm:inline">Phông chữ</span>
+              </button>
+            )}
+
             {/* Atmosphere Theme Toggle */}
             <div className="flex items-center bg-black/5 dark:bg-white/5 p-0.5 rounded-xl">
               <button
@@ -279,7 +297,7 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
                   <span className="font-serif-romantic text-xs uppercase tracking-widest opacity-50 block mb-2">
                     Khoảnh khắc dịu dàng
                   </span>
-                  <p className={`font-handwriting ${fontStyles} leading-relaxed`}>
+                  <p className={`${fontClass || 'font-handwriting'} ${fontStyles} leading-relaxed`}>
                     "{currentMemory.caption}"
                   </p>
                 </div>
@@ -371,7 +389,7 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
               </div>
 
               {/* Heartfelt Note */}
-              <p className={`font-handwriting ${fontStyles} text-center px-2 py-3`}>
+              <p className={`${fontClass || 'font-handwriting'} ${fontStyles} text-center px-2 py-3`}>
                 "{mem.caption}"
               </p>
 

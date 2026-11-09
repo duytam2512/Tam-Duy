@@ -1,19 +1,21 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Download, Share2, Copy, Check, X, Sparkles, Heart } from 'lucide-react';
-import { Memory, CoupleInfo } from '../types';
+import { Memory, CoupleInfo, CaptionFont } from '../types';
 
 interface PolaroidShareModalProps {
   memory: Memory;
   coupleInfo: CoupleInfo;
   isOpen: boolean;
   onClose: () => void;
+  currentFont?: CaptionFont;
 }
 
 export const PolaroidShareModal: React.FC<PolaroidShareModalProps> = ({
   memory,
   coupleInfo,
   isOpen,
-  onClose
+  onClose,
+  currentFont = 'caveat'
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [downloadUrl, setDownloadUrl] = useState<string>('');
@@ -74,9 +76,17 @@ export const PolaroidShareModal: React.FC<PolaroidShareModalProps> = ({
       const locationText = `📍 ${memory.location || 'Một nơi bình yên'}  •  📅 ${formattedDate}`;
       ctx.fillText(locationText, 45, infoY);
 
-      // 4. Dòng cảm xúc / Nhật ký (tự động ngắt dòng)
+      // 4. Dòng cảm xúc / Nhật ký (tự động ngắt dòng theo phông chữ đã chọn)
       ctx.fillStyle = '#3D2E28';
-      ctx.font = '500 24px "Caveat", "Playfair Display", serif';
+      const fontCanvasMap: Record<CaptionFont, string> = {
+        caveat: '500 28px "Caveat", cursive',
+        dancing: '600 26px "Dancing Script", cursive',
+        patrick: '500 24px "Patrick Hand", cursive',
+        playfair: 'italic 500 23px "Playfair Display", serif',
+        vietnam: '500 22px "Be Vietnam Pro", sans-serif',
+        sans: '500 22px "Plus Jakarta Sans", sans-serif'
+      };
+      ctx.font = fontCanvasMap[currentFont] || '500 26px "Caveat", cursive';
 
       const wrapText = (text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
         const words = text.split(' ');

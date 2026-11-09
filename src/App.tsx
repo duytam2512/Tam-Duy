@@ -318,6 +318,7 @@ export function App() {
           onToggleLike={handleToggleLike}
           onDeleteMemory={handleDeleteMemory}
           fontClass={currentFontClass}
+          onOpenFontModal={() => setIsFontModalOpen(true)}
           onOpenLightbox={(mem) => {
             const idx = memories.findIndex((m) => m.id === mem.id);
             if (idx !== -1) setSelectedLightboxIndex(idx);
@@ -388,6 +389,10 @@ export function App() {
         onClose={() => setIsUploadOpen(false)}
         onAddMemory={handleAddMemory}
         coupleInfo={coupleInfo}
+        fontClass={currentFontClass}
+        currentFont={currentFont}
+        onOpenFontModal={() => setIsFontModalOpen(true)}
+        onSaveFont={handleUpdateFont}
       />
 
       {/* Modal Cài Đặt Hình Nền Web Tùy Biến */}
@@ -414,6 +419,9 @@ export function App() {
         entries={diaryEntries}
         onSaveEntries={handleSaveDiaryEntries}
         fontClass={currentFontClass}
+        currentFont={currentFont}
+        onSaveFont={handleUpdateFont}
+        onOpenFontModal={() => setIsFontModalOpen(true)}
       />
 
       {/* Modal Phóng To Ảnh (Lightbox) */}
@@ -441,6 +449,7 @@ export function App() {
           coupleInfo={coupleInfo}
           isOpen={!!selectedShareMemory}
           onClose={() => setSelectedShareMemory(null)}
+          currentFont={currentFont}
         />
       )}
 
@@ -459,6 +468,9 @@ export function App() {
         onClose={() => setIsReadingModeOpen(false)}
         memories={memories}
         coupleInfo={coupleInfo}
+        fontClass={currentFontClass}
+        currentFont={currentFont}
+        onOpenFontModal={() => setIsFontModalOpen(true)}
       />
 
       {/* Ghép Ảnh Thành Video Kỷ Niệm (Google Photos Style Highlight Video Maker) */}

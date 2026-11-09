@@ -25,10 +25,11 @@ import {
   Wind,
   Coffee,
   RotateCcw,
-  BookOpen
+  BookOpen,
+  Type
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { DiaryEntry, CoupleInfo, INITIAL_DIARY_ENTRIES } from '../types';
+import { DiaryEntry, CoupleInfo, INITIAL_DIARY_ENTRIES, CaptionFont, FONT_OPTIONS } from '../types';
 import { compressImageFile } from '../services/storage';
 
 interface HandwrittenJournalModalProps {
@@ -38,6 +39,9 @@ interface HandwrittenJournalModalProps {
   entries: DiaryEntry[];
   onSaveEntries: (entries: DiaryEntry[]) => void;
   fontClass?: string;
+  currentFont?: CaptionFont;
+  onSaveFont?: (font: CaptionFont) => void;
+  onOpenFontModal?: () => void;
 }
 
 // Danh sách biểu tượng thời tiết & tâm trạng
@@ -66,8 +70,13 @@ export const HandwrittenJournalModal: React.FC<HandwrittenJournalModalProps> = (
   coupleInfo,
   entries = INITIAL_DIARY_ENTRIES,
   onSaveEntries,
-  fontClass = 'font-handwriting'
+  fontClass = 'font-handwriting',
+  currentFont = 'caveat',
+  onSaveFont,
+  onOpenFontModal
 }) => {
+  const currentFontOption = FONT_OPTIONS.find((f) => f.id === currentFont) || FONT_OPTIONS[0];
+
   // Trang hiện tại (0 là Bìa/Mục lục, 1..N là các bài viết)
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [isFlipping, setIsFlipping] = useState<boolean>(false);
@@ -454,6 +463,20 @@ export const HandwrittenJournalModal: React.FC<HandwrittenJournalModalProps> = (
               </button>
             </div>
 
+            {/* Đổi font chữ viết tay */}
+            {onOpenFontModal && (
+              <button
+                type="button"
+                onClick={onOpenFontModal}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-amber-200 hover:text-white border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer"
+                title="Đổi font chữ viết tay cho nhật ký & cảm xúc"
+              >
+                <Type className="w-3.5 h-3.5 text-amber-300" />
+                <span className="hidden sm:inline">Font:</span>
+                <span className="text-white font-bold">{currentFontOption.name.split(' (')[0]}</span>
+              </button>
+            )}
+
             {/* Bật / tắt âm thanh lật trang */}
             <button
               type="button"
@@ -742,16 +765,30 @@ export const HandwrittenJournalModal: React.FC<HandwrittenJournalModalProps> = (
 
                   {/* Vùng viết nội dung dài kẻ dòng viết tay */}
                   <div>
-                    <label className="block text-xs font-semibold text-[#8C6D58] mb-1">
-                      Nội dung nhật ký / Bức thư tâm sự <span className="text-[#D98A76]">*</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-[#8C6D58]">
+                        Nội dung nhật ký / Bức thư tâm sự <span className="text-[#D98A76]">*</span>
+                      </label>
+                      {onOpenFontModal && (
+                        <button
+                          type="button"
+                          onClick={onOpenFontModal}
+                          className="text-[11px] font-semibold text-[#D98A76] hover:text-[#C87D55] bg-white border border-[#8C6D58]/20 px-2.5 py-0.5 rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                          title="Đổi kiểu chữ viết tay cho nhật ký"
+                        >
+                          <Type className="w-3 h-3" />
+                          <span>Font: {currentFontOption.name.split(' (')[0]}</span>
+                          <span className="text-[10px] underline ml-0.5">Đổi</span>
+                        </button>
+                      )}
+                    </div>
                     <textarea
                       required
                       rows={9}
                       value={formContent}
                       onChange={(e) => setFormContent(e.target.value)}
                       placeholder="Viết những suy nghĩ chân thành, những lời tâm sự dài của bạn vào đây..."
-                      className="w-full p-4 rounded-2xl bg-white/95 border border-[#8C6D58]/25 focus:border-[#D98A76] focus:outline-hidden font-handwriting text-xl sm:text-2xl text-[#2C1D16] leading-relaxed shadow-inner"
+                      className={`w-full p-4 rounded-2xl bg-white/95 border border-[#8C6D58]/25 focus:border-[#D98A76] focus:outline-hidden ${fontClass} text-xl sm:text-2xl text-[#2C1D16] leading-relaxed shadow-inner`}
                       style={{
                         lineHeight: '32px'
                       }}
@@ -796,7 +833,7 @@ export const HandwrittenJournalModal: React.FC<HandwrittenJournalModalProps> = (
                     </p>
 
                     <div className="mt-6 p-4 rounded-2xl bg-white/80 border border-[#8C6D58]/15 shadow-xs">
-                      <p className="font-handwriting text-xl sm:text-2xl text-[#4A3525] leading-relaxed">
+                      <p className={`${fontClass} text-xl sm:text-2xl text-[#4A3525] leading-relaxed`}>
                         "{coupleInfo.anniversaryNote || 'Từng ngày bên nhau đều là ngày bình yên và dịu dàng nhất.'}"
                       </p>
                     </div>
@@ -941,14 +978,14 @@ export const HandwrittenJournalModal: React.FC<HandwrittenJournalModalProps> = (
                               className="w-full h-full object-cover"
                             />
                           </div>
-                          <div className="text-center font-handwriting text-sm text-[#8C6D58] mt-2">
+                          <div className={`text-center ${fontClass} text-sm text-[#8C6D58] mt-2`}>
                             ♥ Khoảnh khắc gắn liền với trang này
                           </div>
                         </div>
                       ) : (
                         <div className="mt-4 p-5 rounded-2xl bg-white/70 border border-[#8C6D58]/15 text-center shadow-xs">
                           <Heart className="w-6 h-6 mx-auto text-[#E8A598] fill-[#E8A598] mb-1.5" />
-                          <p className="font-handwriting text-xl text-[#8C6D58]">
+                          <p className={`${fontClass} text-xl text-[#8C6D58]`}>
                             "Những dòng viết tay từ trái tim gửi đến người thương."
                           </p>
                         </div>
@@ -997,20 +1034,20 @@ export const HandwrittenJournalModal: React.FC<HandwrittenJournalModalProps> = (
                           <BookOpen className="w-3.5 h-3.5 text-[#D98A76]" />
                           <span>Dòng nhật ký tâm tình</span>
                         </span>
-                        <span className="text-xs font-handwriting text-base text-[#D98A76]">
+                        <span className={`text-xs ${fontClass} text-base text-[#D98A76]`}>
                           {currentEntry.tag || 'Tâm sự'}
                         </span>
                       </div>
 
-                      {/* Nội dung dòng chữ viết tay với font Caveat lãng mạn */}
-                      <div className="whitespace-pre-line font-handwriting text-xl sm:text-2xl text-[#2C1D16] leading-relaxed max-h-[340px] overflow-y-auto pr-2">
+                      {/* Nội dung dòng chữ viết tay với font được chọn lãng mạn */}
+                      <div className={`whitespace-pre-line ${fontClass} text-xl sm:text-2xl text-[#2C1D16] leading-relaxed max-h-[340px] overflow-y-auto pr-2`}>
                         {currentEntry.content}
                       </div>
                     </div>
 
                     {/* Dưới đáy trang phải: Chữ ký thân thương */}
                     <div className="pt-4 border-t border-[#8C6D58]/15 flex items-center justify-between text-xs text-[#8C6D58]">
-                      <span className="font-handwriting text-lg text-[#D98A76]">
+                      <span className={`${fontClass} text-lg text-[#D98A76]`}>
                         Thương mến, {currentEntry.author} ♥
                       </span>
 
