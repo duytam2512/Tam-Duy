@@ -21,7 +21,9 @@ import {
   Info,
   Cloud,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  GripVertical,
+  Move
 } from 'lucide-react';
 import { MusicTrack, DEFAULT_PLAYLIST } from '../types';
 import { extractYouTubeId, getYouTubeVideoInfoClient } from '../utils/youtube';
@@ -97,6 +99,162 @@ export const MusicPlayer: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const [isYtReady, setIsYtReady] = useState(false);
+
+  // Vị trí linh hoạt của máy phát nhạc (Draggable Music Player)
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStateRef = useRef<{
+    startX: number;
+    startY: number;
+    initialPosX: number;
+    initialPosY: number;
+    hasMoved: boolean;
+    pointerId: number | null;
+  }>({
+    startX: 0,
+    startY: 0,
+    initialPosX: 0,
+    initialPosY: 0,
+    hasMoved: false,
+    pointerId: null
+  });
+
+  const clampPosition = useCallback((pos: { x: number; y: number }, el?: HTMLElement | null): { x: number; y: number } => {
+    if (typeof window === 'undefined') return pos;
+    const width = el?.offsetWidth || 280;
+    const height = el?.offsetHeight || 64;
+    const pad = 12;
+    const maxX = Math.max(pad, window.innerWidth - width - pad);
+    const maxY = Math.max(pad, window.innerHeight - height - pad);
+    return {
+      x: Math.min(maxX, Math.max(pad, pos.x)),
+      y: Math.min(maxY, Math.max(pad, pos.y))
+    };
+  }, []);
+
+  // Khởi tạo vị trí linh hoạt (từ localStorage hoặc góc dưới bên trái)
+  useEffect(() => {
+    const getInitialPos = (): { x: number; y: number } => {
+      try {
+        const saved = localStorage.getItem('goc_nho_player_position_v2');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+            return clampPosition(parsed);
+          }
+        }
+      } catch {}
+      const h = 64;
+      const pad = 16;
+      return {
+        x: pad,
+        y: Math.max(pad, window.innerHeight - h - 24)
+      };
+    };
+
+    setPosition(getInitialPos());
+
+    const handleWindowResize = () => {
+      setPosition((prev) => (prev ? clampPosition(prev, widgetRef.current) : prev));
+    };
+
+    window.addEventListener('resize', handleWindowResize);
+    window.addEventListener('orientationchange', handleWindowResize);
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+      window.removeEventListener('orientationchange', handleWindowResize);
+    };
+  }, [clampPosition]);
+
+  // Tự động căn chỉnh khi mở rộng thanh âm lượng để không bị tràn mép màn hình
+  useEffect(() => {
+    if (position && widgetRef.current) {
+      setPosition((prev) => (prev ? clampPosition(prev, widgetRef.current) : prev));
+    }
+  }, [isExpanded, clampPosition]);
+
+  // Kéo thả linh hoạt mượt mà trên cả máy tính (chuột) và điện thoại di động (cảm ứng)
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    // Không kéo khi bấm trực tiếp vào các nút bấm hoặc thanh trượt
+    if (target.closest('button') || target.closest('input') || target.closest('a')) {
+      return;
+    }
+
+    const currentPos = position || {
+      x: 16,
+      y: Math.max(16, window.innerHeight - 84)
+    };
+
+    dragStateRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialPosX: currentPos.x,
+      initialPosY: currentPos.y,
+      hasMoved: false,
+      pointerId: e.pointerId
+    };
+
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+
+    setIsDragging(true);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || dragStateRef.current.pointerId !== e.pointerId) return;
+
+    const dx = e.clientX - dragStateRef.current.startX;
+    const dy = e.clientY - dragStateRef.current.startY;
+
+    if (Math.hypot(dx, dy) > 5) {
+      dragStateRef.current.hasMoved = true;
+    }
+
+    const rawNext = {
+      x: dragStateRef.current.initialPosX + dx,
+      y: dragStateRef.current.initialPosY + dy
+    };
+
+    const nextPos = clampPosition(rawNext, widgetRef.current);
+    setPosition(nextPos);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+
+    const wasMoved = dragStateRef.current.hasMoved;
+    setIsDragging(false);
+    dragStateRef.current.pointerId = null;
+
+    if (wasMoved && position) {
+      try {
+        localStorage.setItem('goc_nho_player_position_v2', JSON.stringify(position));
+      } catch {}
+    }
+  };
+
+  // Đặt lại vị trí máy phát nhạc về góc mặc định
+  const handleResetPosition = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const defaultPos = {
+      x: 16,
+      y: Math.max(16, window.innerHeight - (isExpanded ? 110 : 70) - 24)
+    };
+    setPosition(defaultPos);
+    try {
+      localStorage.setItem('goc_nho_player_position_v2', JSON.stringify(defaultPos));
+    } catch {}
+    setToastMessage('📍 Đã đưa máy phát nhạc về vị trí mặc định!');
+    setTimeout(() => setToastMessage(null), 2500);
+  };
 
   const currentTrack = playlist[currentTrackIndex] || playlist[0];
 
@@ -588,11 +746,44 @@ export const MusicPlayer: React.FC = () => {
         <div id="yt-player-target" />
       </div>
 
-      {/* Floating Music Widget (Góc dưới bên trái màn hình) */}
-      <div className="fixed bottom-6 left-6 z-40 select-none">
-        <div className="bg-[#FFFDF9]/95 backdrop-blur-md rounded-2xl border border-[#8C6D58]/20 shadow-xl transition-all duration-300 overflow-hidden">
+      {/* Floating Music Widget (Di chuyển linh hoạt khắp màn hình - Mobile & Desktop) */}
+      <div
+        ref={widgetRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        style={
+          position
+            ? {
+                left: `${position.x}px`,
+                top: `${position.y}px`,
+                touchAction: 'none'
+              }
+            : {
+                left: '16px',
+                bottom: '24px',
+                touchAction: 'none'
+              }
+        }
+        className={`fixed z-40 select-none touch-none transition-shadow ${
+          isDragging
+            ? 'cursor-grabbing scale-[1.02] shadow-2xl ring-2 ring-[#E8A598]/80'
+            : 'cursor-default shadow-xl'
+        }`}
+      >
+        <div className="bg-[#FFFDF9]/95 backdrop-blur-md rounded-2xl border border-[#8C6D58]/20 overflow-hidden relative">
           {/* Thanh Player Compact */}
-          <div className="p-2 sm:p-2.5 flex items-center gap-2.5">
+          <div className="p-2 sm:p-2.5 flex items-center gap-2">
+            {/* Nút kéo di chuyển tiện lợi (Grip Handle) */}
+            <div
+              className="p-1 -ml-1 text-[#8C6D58]/40 hover:text-[#D98A76] cursor-grab active:cursor-grabbing flex items-center justify-center transition-colors group/drag"
+              title="Kéo thả để di chuyển máy phát nhạc khắp màn hình (Chạm đúp để về góc mặc định)"
+              onDoubleClick={handleResetPosition}
+            >
+              <GripVertical className="w-4 h-4 group-hover/drag:scale-110 transition-transform" />
+            </div>
+
             {/* Đĩa than quay khi phát nhạc */}
             <button
               onClick={togglePlay}
@@ -628,8 +819,13 @@ export const MusicPlayer: React.FC = () => {
 
             {/* Thông tin bài hát & hiệu ứng sóng nhạc */}
             <div
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="cursor-pointer max-w-[130px] sm:max-w-[170px]"
+              onClick={() => {
+                if (!dragStateRef.current.hasMoved) {
+                  setIsExpanded(!isExpanded);
+                }
+              }}
+              className="cursor-pointer max-w-[120px] sm:max-w-[160px]"
+              title="Bấm để mở/thu gọn thanh chỉnh âm lượng"
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-serif-romantic font-semibold text-xs text-[#3D2E28] truncate block">
@@ -766,6 +962,22 @@ export const MusicPlayer: React.FC = () => {
                 >
                   <RefreshCw className="w-3 h-3" />
                   <span>Đồng bộ ngay</span>
+                </button>
+              </div>
+
+              {/* Mẹo di chuyển máy phát nhạc linh hoạt */}
+              <div className="flex items-center justify-between text-[11px] text-[#8C6D58] bg-[#FAF6F0] px-3 py-1.5 rounded-xl mb-3 border border-[#8C6D58]/10">
+                <span className="flex items-center gap-1.5">
+                  <Move className="w-3.5 h-3.5 text-[#D98A76]" />
+                  <span>Kéo thả máy phát nhạc để đặt vị trí bất kỳ</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetPosition}
+                  className="text-[#D98A76] hover:text-[#C87D55] font-semibold hover:underline cursor-pointer"
+                  title="Đưa máy phát nhạc về góc mặc định"
+                >
+                  Về góc mặc định
                 </button>
               </div>
 
