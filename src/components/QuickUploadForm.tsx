@@ -21,11 +21,20 @@ import {
   Trash2,
   Layers,
   FileCheck,
-  Type
+  Type,
+  Video,
+  Film,
+  Link2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Memory, POPULAR_TAGS, SAMPLE_PHOTO_LIBRARY, CoupleInfo, CaptionFont, FONT_OPTIONS } from '../types';
-import { compressImageFile } from '../services/storage';
+import {
+  compressImageFile,
+  extractVideoMetadataAndThumbnail,
+  uploadVideoFile,
+  createFallbackVideoPoster,
+  formatVideoDuration
+} from '../services/storage';
 import { generateSmartCaptions, extractContextualEmojis, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
 
 interface QuickUploadFormProps {
@@ -53,10 +62,22 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   onOpenFontModal,
   onSaveFont
 }) => {
+  // Chế độ đăng: Ảnh hoặc Video
+  const [mediaMode, setMediaMode] = useState<'image' | 'video'>('image');
+
   // Danh sách ảnh đã chọn (hỗ trợ chọn nhiều ảnh)
   const [images, setImages] = useState<string[]>([]);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [uploadMode, setUploadMode] = useState<'album' | 'individual'>('album');
+
+  // Trạng thái Video đã chọn
+  const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string>('');
+  const [videoPosterUrl, setVideoPosterUrl] = useState<string>('');
+  const [videoDuration, setVideoDuration] = useState<number>(0);
+  const [videoLinkInput, setVideoLinkInput] = useState<string>('');
+  const [videoUploadProgress, setVideoUploadProgress] = useState<number>(0);
+  const [isProcessingVideo, setIsProcessingVideo] = useState<boolean>(false);
 
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [location, setLocation] = useState<string>('');
@@ -84,6 +105,18 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  // Dọn dẹp Object URL khi đổi hoặc xóa video preview
+  useEffect(() => {
+    return () => {
+      if (videoPreviewUrl && videoPreviewUrl.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(videoPreviewUrl);
+        } catch {}
+      }
+    };
+  }, [videoPreviewUrl]);
 
   // Đảm bảo activeImageIndex luôn hợp lệ
   useEffect(() => {
@@ -92,7 +125,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     }
   }, [images.length, activeImageIndex]);
 
-  const activeImage = images[activeImageIndex] || images[0] || '';
+  const activeImage = mediaMode === 'video' ? videoPosterUrl : images[activeImageIndex] || images[0] || '';
 
   // Xử lý khi người dùng chọn nhiều file ảnh từ máy / điện thoại (đặc biệt tối ưu hóa iPhone)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,6 +226,71 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     setActiveImageIndex(0);
   };
 
+  // Xử lý chọn file video từ máy tính / iPhone / Android
+  const processSelectedVideoFile = async (file: File) => {
+    setValidationError(null);
+    if (file.size > 80 * 1024 * 1024) {
+      setValidationError('Video vượt quá 80MB. Bạn hãy chọn video ngắn hơn (tối đa 80MB) nhé!');
+      return;
+    }
+
+    setIsProcessingVideo(true);
+    try {
+      if (videoPreviewUrl && videoPreviewUrl.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(videoPreviewUrl);
+        } catch {}
+      }
+      const previewUrl = URL.createObjectURL(file);
+      setSelectedVideoFile(file);
+      setVideoPreviewUrl(previewUrl);
+      setVideoLinkInput('');
+
+      const { thumbnail, duration } = await extractVideoMetadataAndThumbnail(file);
+      setVideoPosterUrl(thumbnail);
+      setVideoDuration(duration);
+    } catch (err: any) {
+      console.warn('Lỗi đọc video:', err);
+      setValidationError(err?.message || 'Không thể đọc file video này trên thiết bị.');
+    } finally {
+      setIsProcessingVideo(false);
+    }
+  };
+
+  const handleVideoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processSelectedVideoFile(file);
+    if (videoInputRef.current) {
+      videoInputRef.current.value = '';
+    }
+  };
+
+  const handleVideoDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = Array.from(e.dataTransfer.files).find(
+      (f) => f.type.startsWith('video/') || f.name.match(/\.(mp4|mov|webm|m4v|3gp)$/i)
+    );
+    if (file) {
+      await processSelectedVideoFile(file);
+    }
+  };
+
+  const handleClearVideo = () => {
+    if (videoPreviewUrl && videoPreviewUrl.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(videoPreviewUrl);
+      } catch {}
+    }
+    setSelectedVideoFile(null);
+    setVideoPreviewUrl('');
+    setVideoPosterUrl('');
+    setVideoDuration(0);
+    setVideoLinkInput('');
+    setVideoUploadProgress(0);
+  };
+
   // Gọi Gemini AI & Smart Caption Engine để viết Caption phong phú, không lặp lại
   const handleGenerateAiCaption = async () => {
     setIsAiGenerating(true);
@@ -274,10 +372,16 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     e.preventDefault();
     setValidationError(null);
 
-    if (images.length === 0) {
+    if (mediaMode === 'image' && images.length === 0) {
       setValidationError('Vui lòng chọn hoặc tải lên ít nhất một tấm ảnh kỷ niệm nhé!');
       return;
     }
+
+    if (mediaMode === 'video' && !selectedVideoFile && !videoLinkInput.trim()) {
+      setValidationError('Vui lòng chọn file video từ máy hoặc dán đường dẫn video nhé!');
+      return;
+    }
+
     if (!caption.trim()) {
       setValidationError('Hãy viết vài dòng cảm xúc hoặc bấm dùng Gemini AI để viết gợi ý nhé!');
       return;
@@ -290,9 +394,32 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       const memoryTag = selectedTag || 'Kỷ niệm';
       const memoryDate = date || new Date().toISOString().split('T')[0];
 
-      if (uploadMode === 'album' || images.length === 1) {
+      if (mediaMode === 'video') {
+        let finalVideoUrl = videoLinkInput.trim();
+        let finalPoster = videoPosterUrl || createFallbackVideoPoster('Video Kỷ Niệm');
+
+        if (selectedVideoFile) {
+          setVideoUploadProgress(5);
+          const uploaded = await uploadVideoFile(selectedVideoFile, (pct) => {
+            setVideoUploadProgress(pct);
+          });
+          finalVideoUrl = uploaded.videoUrl;
+        }
+
+        await onAddMemory({
+          mediaType: 'video',
+          videoUrl: finalVideoUrl,
+          videoDuration: videoDuration || undefined,
+          imageUrl: finalPoster,
+          date: memoryDate,
+          location: memoryLocation,
+          caption: caption.trim(),
+          tag: memoryTag
+        });
+      } else if (uploadMode === 'album' || images.length === 1) {
         // 1 bài viết album có nhiều ảnh
         await onAddMemory({
+          mediaType: 'image',
           imageUrl: images[0],
           images: images,
           date: memoryDate,
@@ -303,6 +430,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       } else {
         // Đăng thành nhiều bài viết riêng biệt (mỗi ảnh 1 bài)
         const list = images.map((imgUrl, i) => ({
+          mediaType: 'image' as const,
           imageUrl: imgUrl,
           images: [imgUrl],
           date: memoryDate,
@@ -322,6 +450,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
       // Reset form
       setImages([]);
+      handleClearVideo();
       setCaption('');
       setLocation('');
       setAiSuggestions([]);
@@ -335,6 +464,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       );
     } finally {
       setIsSubmitting(false);
+      setVideoUploadProgress(0);
     }
   };
 
@@ -361,8 +491,43 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             Đăng Kỷ Niệm Của Hai Đứa
           </h2>
           <p className="text-xs text-[#8C6D58] mt-0.5">
-            Chọn một hoặc nhiều ảnh cùng lúc, kết nối Gemini AI để viết những dòng cảm xúc ngọt ngào
+            Chọn ảnh hoặc video kỷ niệm từ máy, kết nối Gemini AI để viết những dòng cảm xúc ngọt ngào
           </p>
+        </div>
+
+        {/* Bộ chuyển đổi loại kỷ niệm: Đăng Ảnh | Đăng Video */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-[#F9F6F0] rounded-2xl border border-[#8C6D58]/15 mb-4">
+          <button
+            type="button"
+            onClick={() => {
+              setMediaMode('image');
+              setValidationError(null);
+            }}
+            className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              mediaMode === 'image'
+                ? 'bg-white text-[#3D2E28] shadow-xs border border-[#E8A598]/40'
+                : 'text-[#8C6D58] hover:text-[#3D2E28]'
+            }`}
+          >
+            <Camera className="w-4 h-4 text-[#D98A76]" />
+            <span>Đăng Ảnh Kỷ Niệm</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMediaMode('video');
+              setShowPhotoLibrary(false);
+              setValidationError(null);
+            }}
+            className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              mediaMode === 'video'
+                ? 'bg-white text-[#3D2E28] shadow-xs border border-[#E8A598]/40'
+                : 'text-[#8C6D58] hover:text-[#3D2E28]'
+            }`}
+          >
+            <Video className="w-4 h-4 text-[#D98A76]" />
+            <span>Đăng Video Kỷ Niệm</span>
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -372,28 +537,152 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             </div>
           )}
 
-          {/* Ô Chọn / Tải nhiều ảnh lên với Live Preview */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-[#8C6D58] flex items-center gap-1.5">
-                <span>Hình ảnh kỷ niệm</span>
-                {images.length > 0 && (
-                  <span className="bg-[#E8A598]/20 text-[#D98A76] px-2 py-0.5 rounded-full text-[11px] font-bold">
-                    {images.length} ảnh đã chọn
-                  </span>
+          {mediaMode === 'video' ? (
+            /* CHẾ ĐỘ ĐĂNG VIDEO KỶ NIỆM */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-[#8C6D58] flex items-center gap-1.5">
+                  <Film className="w-3.5 h-3.5 text-[#D98A76]" />
+                  <span>Video kỷ niệm (MP4 / MOV / WebM - tối đa 80MB)</span>
+                  <span className="text-[#D98A76]">*</span>
+                </label>
+                {selectedVideoFile && (
+                  <button
+                    type="button"
+                    onClick={handleClearVideo}
+                    className="text-[11px] text-rose-600 hover:underline font-semibold cursor-pointer"
+                  >
+                    Đổi video khác
+                  </button>
                 )}
-                <span className="text-[#D98A76]">*</span>
-              </label>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => setShowPhotoLibrary(!showPhotoLibrary)}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] bg-[#F9F6F0] hover:bg-[#E8A598]/20 px-2.5 py-1 rounded-full transition-all cursor-pointer"
-              >
-                <Library className="w-3.5 h-3.5" />
-                <span>{showPhotoLibrary ? 'Đóng kho ảnh mẫu' : 'Mở kho ảnh mẫu (+20 ảnh)'}</span>
-              </button>
+              {videoPreviewUrl || videoLinkInput.trim() ? (
+                <div className="relative rounded-2xl overflow-hidden border-2 border-[#E8A598]/40 bg-black shadow-sm">
+                  <video
+                    src={videoPreviewUrl || videoLinkInput.trim()}
+                    poster={videoPosterUrl || undefined}
+                    controls
+                    playsInline
+                    className="w-full max-h-64 object-contain bg-black"
+                  />
+                  <div className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-black/65 text-white text-[11px] font-semibold rounded-full backdrop-blur-xs flex items-center gap-1.5">
+                    <Video className="w-3 h-3 text-[#E8A598]" />
+                    <span>
+                      {selectedVideoFile
+                        ? `${selectedVideoFile.name.slice(0, 24)}${selectedVideoFile.name.length > 24 ? '...' : ''} (${(selectedVideoFile.size / (1024 * 1024)).toFixed(1)} MB)`
+                        : 'Video từ đường dẫn'}
+                    </span>
+                    {videoDuration > 0 && (
+                      <span className="text-[#E8A598]">• {formatVideoDuration(videoDuration)}</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearVideo}
+                    className="absolute top-2.5 right-2.5 p-1.5 bg-rose-600/85 hover:bg-rose-700 text-white rounded-full shadow-md cursor-pointer"
+                    title="Xóa video đã chọn"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label
+                  htmlFor="memory-video-upload-input"
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleVideoDrop}
+                  className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all block ${
+                    isDragging
+                      ? 'border-[#D98A76] bg-[#E8A598]/15 scale-[0.99]'
+                      : 'border-[#8C6D58]/25 hover:border-[#E8A598] bg-white hover:bg-[#FAF6F0]'
+                  }`}
+                >
+                  <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-[#E8A598]/15 flex items-center justify-center text-[#D98A76]">
+                    <Video className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs sm:text-sm font-semibold text-[#3D2E28]">
+                    Chạm để chọn video từ iPhone / Android / Máy tính
+                  </p>
+                  <p className="text-[11px] text-[#8C6D58] mt-1">
+                    Hỗ trợ MP4, MOV (iPhone), WebM • Tối đa 80MB • Tự động tạo ảnh bìa sắc nét
+                  </p>
+                  {isProcessingVideo && (
+                    <div className="mt-2 text-xs text-[#D98A76] font-medium flex items-center justify-center gap-1.5 animate-pulse">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Đang đọc thông tin & tạo ảnh bìa video...</span>
+                    </div>
+                  )}
+                </label>
+              )}
+
+              <input
+                id="memory-video-upload-input"
+                ref={videoInputRef}
+                type="file"
+                accept="video/*,.mp4,.mov,.webm,.m4v,.3gp"
+                onChange={handleVideoFileChange}
+                className="sr-only"
+              />
+
+              {/* Thanh tiến độ tải video lên máy chủ */}
+              {isSubmitting && videoUploadProgress > 0 && (
+                <div className="bg-[#FAF7F2] p-3 rounded-xl border border-[#E8A598]/40 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-[#3D2E28]">
+                    <span>Đang tải video lên máy chủ...</span>
+                    <span className="text-[#D98A76]">{videoUploadProgress}%</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-[#E8A598]/20 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-[#E8A598] to-[#D98A76] transition-all duration-200"
+                      style={{ width: `${videoUploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Tùy chọn dán link video trực tiếp (.mp4/.webm) */}
+              {!selectedVideoFile && (
+                <div className="relative">
+                  <Link2 className="w-3.5 h-3.5 text-[#8C6D58] absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="url"
+                    value={videoLinkInput}
+                    onChange={(e) => {
+                      setVideoLinkInput(e.target.value);
+                      if (e.target.value.trim() && !videoPosterUrl) {
+                        setVideoPosterUrl(createFallbackVideoPoster('Video Kỷ Niệm'));
+                      }
+                    }}
+                    placeholder="Hoặc dán đường dẫn video trực tiếp (.mp4 / .webm)..."
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
+                  />
+                </div>
+              )}
             </div>
+          ) : (
+            /* Ô Chọn / Tải nhiều ảnh lên với Live Preview */
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-[#8C6D58] flex items-center gap-1.5">
+                  <span>Hình ảnh kỷ niệm</span>
+                  {images.length > 0 && (
+                    <span className="bg-[#E8A598]/20 text-[#D98A76] px-2 py-0.5 rounded-full text-[11px] font-bold">
+                      {images.length} ảnh đã chọn
+                    </span>
+                  )}
+                  <span className="text-[#D98A76]">*</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPhotoLibrary(!showPhotoLibrary)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] bg-[#F9F6F0] hover:bg-[#E8A598]/20 px-2.5 py-1 rounded-full transition-all cursor-pointer"
+                >
+                  <Library className="w-3.5 h-3.5" />
+                  <span>{showPhotoLibrary ? 'Đóng kho ảnh mẫu' : 'Mở kho ảnh mẫu (+20 ảnh)'}</span>
+                </button>
+              </div>
 
             {/* Kho Ảnh Mẫu Mở Rộng */}
             {showPhotoLibrary && (
@@ -662,16 +951,17 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             )}
 
             {/* Input file hỗ trợ đầy đủ các định dạng di động (HEIC, HEIF, JPG, PNG) */}
-            <input
-              id="memory-upload-input-field"
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
-              onChange={handleFileChange}
-              className="sr-only"
-            />
-          </div>
+              <input
+                id="memory-upload-input-field"
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
+                onChange={handleFileChange}
+                className="sr-only"
+              />
+            </div>
+          )}
 
           {/* Ô nhập ngày kỷ niệm & Thể loại */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -919,19 +1209,29 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
             <button
               type="submit"
-              disabled={isSubmitting || isCompressing}
+              disabled={isSubmitting || isCompressing || isProcessingVideo}
               className="px-6 py-2.5 rounded-full bg-[#E8A598] hover:bg-[#D98A76] text-white font-semibold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Đang lưu kỷ niệm...</span>
+                  <span>
+                    {mediaMode === 'video' && videoUploadProgress > 0
+                      ? `Đang tải video (${videoUploadProgress}%)...`
+                      : 'Đang lưu kỷ niệm...'}
+                  </span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4" />
+                  {mediaMode === 'video' ? (
+                    <Video className="w-4 h-4" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
                   <span>
-                    {images.length > 1
+                    {mediaMode === 'video'
+                      ? 'Đăng Video Kỷ Niệm'
+                      : images.length > 1
                       ? uploadMode === 'album'
                         ? `Lưu Album (${images.length} ảnh)`
                         : `Lưu ${images.length} kỷ niệm`

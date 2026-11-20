@@ -11,7 +11,8 @@ import {
   Heart,
   Share2,
   Tag,
-  Layers
+  Layers,
+  Video
 } from 'lucide-react';
 import { Memory } from '../types';
 
@@ -40,6 +41,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 }) => {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+
+  const isVideo = memory.mediaType === 'video' && Boolean(memory.videoUrl);
 
   // Danh sách ảnh trong album của kỷ niệm này
   const albumImages = memory.images && memory.images.length > 0 ? memory.images : [memory.imageUrl];
@@ -96,30 +99,32 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Zoom & Rotate controls */}
-          <div className="hidden sm:flex items-center gap-1 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-full text-white/80">
-            <button
-              onClick={handleZoomIn}
-              className="p-1.5 hover:text-white hover:bg-white/10 rounded-full cursor-pointer transition-colors"
-              title="Phóng to"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleZoomOut}
-              className="p-1.5 hover:text-white hover:bg-white/10 rounded-full cursor-pointer transition-colors"
-              title="Thu nhỏ"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleRotate}
-              className="p-1.5 hover:text-white hover:bg-white/10 rounded-full cursor-pointer transition-colors"
-              title="Xoay ảnh"
-            >
-              <RotateCw className="w-4 h-4" />
-            </button>
-          </div>
+          {/* Zoom & Rotate controls (chỉ hiện với ảnh) */}
+          {!isVideo && (
+            <div className="hidden sm:flex items-center gap-1 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-full text-white/80">
+              <button
+                onClick={handleZoomIn}
+                className="p-1.5 hover:text-white hover:bg-white/10 rounded-full cursor-pointer transition-colors"
+                title="Phóng to"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleZoomOut}
+                className="p-1.5 hover:text-white hover:bg-white/10 rounded-full cursor-pointer transition-colors"
+                title="Thu nhỏ"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleRotate}
+                className="p-1.5 hover:text-white hover:bg-white/10 rounded-full cursor-pointer transition-colors"
+                title="Xoay ảnh"
+              >
+                <RotateCw className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           <button
             onClick={() => onOpenShare({ ...memory, imageUrl: activeImageUrl })}
@@ -160,21 +165,33 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         </button>
       )}
 
-      {/* Main Image Container */}
+      {/* Main Media Container (Video hoặc Ảnh) */}
       <div className="relative max-w-4xl w-full max-h-[88vh] flex flex-col items-center justify-center z-10">
         <div className="relative overflow-hidden flex items-center justify-center max-h-[60vh] w-full group">
-          <img
-            src={activeImageUrl}
-            alt={memory.caption}
-            style={{
-              transform: `scale(${zoom}) rotate(${rotation}deg)`,
-              transition: 'transform 0.25s ease'
-            }}
-            className="max-h-[58vh] max-w-full object-contain rounded-xl shadow-2xl select-none"
-          />
+          {isVideo ? (
+            <video
+              key={memory.id}
+              src={memory.videoUrl}
+              poster={memory.imageUrl}
+              controls
+              autoPlay
+              playsInline
+              className="max-h-[58vh] max-w-full rounded-xl shadow-2xl bg-black"
+            />
+          ) : (
+            <img
+              src={activeImageUrl}
+              alt={memory.caption}
+              style={{
+                transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                transition: 'transform 0.25s ease'
+              }}
+              className="max-h-[58vh] max-w-full object-contain rounded-xl shadow-2xl select-none"
+            />
+          )}
 
           {/* Nút chuyển ảnh trong cùng album nếu có nhiều ảnh */}
-          {albumImages.length > 1 && (
+          {!isVideo && albumImages.length > 1 && (
             <>
               <button
                 onClick={handleSubPrev}
@@ -195,7 +212,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         </div>
 
         {/* Dải thumbnail chuyển ảnh trong album nếu có nhiều ảnh */}
-        {albumImages.length > 1 && (
+        {!isVideo && albumImages.length > 1 && (
           <div className="flex items-center gap-1.5 mt-2.5 max-w-md overflow-x-auto py-1 px-2 no-scrollbar">
             {albumImages.map((img, i) => (
               <button
@@ -222,11 +239,16 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 {memory.tag || 'Kỷ niệm'}
               </span>
 
-              {albumImages.length > 1 && (
+              {isVideo ? (
+                <span className="inline-flex items-center gap-1 text-[11px] text-[#3D2E28] font-semibold bg-[#F9F6F0] px-2.5 py-0.5 rounded-full">
+                  <Video className="w-3 h-3 text-[#D98A76]" />
+                  Video kỷ niệm
+                </span>
+              ) : albumImages.length > 1 ? (
                 <span className="text-[11px] text-[#8C6D58] font-medium bg-[#F9F6F0] px-2 py-0.5 rounded-full">
                   Album ({albumImages.length} ảnh)
                 </span>
-              )}
+              ) : null}
             </div>
 
             <button

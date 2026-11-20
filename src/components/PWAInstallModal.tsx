@@ -14,6 +14,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import { forceHardUpdateApp } from '../utils/appUpdater';
 
 interface PWAInstallModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({ isOpen, onClos
   );
   const [isInstalling, setIsInstalling] = useState(false);
   const [installSuccess, setInstallSuccess] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   if (!isOpen) return null;
 
@@ -282,21 +284,17 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({ isOpen, onClos
         {/* Footer với nút Kiểm tra cập nhật & Đóng */}
         <div className="p-4 bg-[#FAF6F0]/60 border-t border-[#E8A598]/20 flex items-center justify-between">
           <button
-            onClick={() => {
-              if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.ready.then((reg) => {
-                  reg.update().catch(() => {});
-                  window.location.reload();
-                });
-              } else {
-                window.location.reload();
-              }
+            type="button"
+            disabled={isRefreshing}
+            onClick={async () => {
+              setIsRefreshing(true);
+              await forceHardUpdateApp();
             }}
-            className="flex items-center gap-1.5 py-2 px-3.5 rounded-xl bg-white hover:bg-[#FAF6F0] text-[#C87D55] text-xs font-medium border border-[#C87D55]/30 shadow-xs transition"
-            title="Tải lại để nhận ngay các thay đổi mới nhất từ Google Studio"
+            className="flex items-center gap-1.5 py-2 px-3.5 rounded-xl bg-white hover:bg-[#FAF6F0] text-[#C87D55] text-xs font-medium border border-[#C87D55]/30 shadow-xs transition disabled:opacity-60 cursor-pointer"
+            title="Xóa bộ nhớ đệm cũ và tải ngay phiên bản mới nhất (không mất ảnh hay kỷ niệm)"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Cập nhật bản mới</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>{isRefreshing ? 'Đang cập nhật...' : 'Cập nhật bản mới'}</span>
           </button>
 
           <button

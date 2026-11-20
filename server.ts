@@ -12,12 +12,230 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Phiên bản chạy hiện tại của server/bản build để iPhone/Android PWA tự nhận biết có bản cập nhật mới
+function resolveAppVersion(): string {
+  try {
+    const distIndex = path.resolve(process.cwd(), "dist", "index.html");
+    if (fs.existsSync(distIndex)) {
+      const content = fs.readFileSync(distIndex, "utf-8");
+      const hash = crypto.createHash("sha256").update(content).digest("hex").slice(0, 12);
+      return `prod-${hash}`;
+    }
+  } catch {
+    // ignore
+  }
+  return `dev-${Date.now()}`;
+}
+
+const APP_VERSION = resolveAppVersion();
+
+app.get("/api/app-version", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.json({ version: APP_VERSION });
+});
+
 // Thư mục lưu nhạc tải về website
 const MUSIC_DIR = path.resolve(process.cwd(), "public", "music");
 if (!fs.existsSync(MUSIC_DIR)) {
   fs.mkdirSync(MUSIC_DIR, { recursive: true });
 }
 app.use("/music", express.static(MUSIC_DIR));
+
+// Thư mục lưu video kỷ niệm tải lên (hỗ trợ HTTP Range streaming cho iPhone/Safari/Desktop)
+const VIDEO_DIR = path.resolve(process.cwd(), "public", "uploads", "videos");
+if (!fs.existsSync(VIDEO_DIR)) {
+  fs.mkdirSync(VIDEO_DIR, { recursive: true });
+}
+app.use(
+  "/uploads/videos",
+  express.static(VIDEO_DIR, {
+    acceptRanges: true,
+    setHeaders: (res) => {
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+    },
+  })
+);
+
+/**
+ * API: POST /api/uploads/video
+ * Nhận file video binary trực tiếp (tối đa 80MB), lưu vào public/uploads/videos
+ * để đảm bảo đồng bộ trên mọi thiết bị mà không vượt giới hạn 1MB của Firestore
+ */
+app.post(
+  "/api/uploads/video",
+  express.raw({ type: ["video/*", "application/octet-stream"], limit: "80mb" }),
+  (req, res) => {
+    try {
+      const buffer = req.body as Buffer;
+      if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Không nhận được dữ liệu video. Vui lòng chọn lại file video nhé!",
+        });
+      }
+
+      const contentType = (req.headers["content-type"] || "video/mp4").toLowerCase();
+      const rawName = decodeURIComponent(String(req.headers["x-file-name"] || "video.mp4"));
+      const extMatch = rawName.toLowerCase().match(/\.(mp4|mov|webm|m4v|ogg|3gp)$/);
+      let ext = extMatch ? extMatch[1] : "mp4";
+      if (!extMatch) {
+        if (contentType.includes("webm")) ext = "webm";
+        else if (contentType.includes("quicktime")) ext = "mov";
+        else if (contentType.includes("x-m4v")) ext = "m4v";
+      }
+
+      const uniqueName = `vid-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
+      const filePath = path.join(VIDEO_DIR, uniqueName);
+      fs.writeFileSync(filePath, buffer);
+
+      return res.json({
+        success: true,
+        videoUrl: `/uploads/videos/${uniqueName}`,
+        filename: uniqueName,
+        size: buffer.length,
+        mimeType: contentType,
+      });
+    } catch (err: any) {
+      console.error("Lỗi lưu video tải lên:", err);
+      return res.status(500).json({
+        success: false,
+        message: err?.message || "Không thể lưu video lên máy chủ lúc này",
+      });
+    }
+  }
+);
+
+/**
+ * API: DELETE /api/uploads/video/:filename
+ * Xóa file video khi người dùng xóa kỷ niệm video
+ */
+app.delete("/api/uploads/video/:filename", (req, res) => {
+  try {
+    const filename = path.basename(req.params.filename || "");
+    if (!filename || !/^[a-zA-Z0-9._-]+$/.test(filename)) {
+      return res.status(400).json({ success: false, message: "Tên file không hợp lệ" });
+    }
+    const filePath = path.join(VIDEO_DIR, filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.warn("Lỗi xóa file video:", err);
+    return res.status(500).json({ success: false });
+  }
+});
+
+/**
+ * API: POST /api/music/upload
+ * Cho phép người dùng tải file nhạc trực tiếp từ máy (MP3/M4A/WAV/AAC, tối đa 25MB)
+ */
+app.post(
+  "/api/music/upload",
+  express.raw({ type: ["audio/*", "application/octet-stream"], limit: "25mb" }),
+  (req, res) => {
+    try {
+      const buffer = req.body as Buffer;
+      if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Không nhận được dữ liệu âm thanh.",
+        });
+      }
+
+      const contentType = (req.headers["content-type"] || "audio/mpeg").toLowerCase();
+      const rawName = decodeURIComponent(String(req.headers["x-file-name"] || "song.mp3"));
+      const extMatch = rawName.toLowerCase().match(/\.(mp3|m4a|wav|aac|ogg|flac)$/);
+      let ext = extMatch ? extMatch[1] : "mp3";
+      if (!extMatch) {
+        if (contentType.includes("mp4") || contentType.includes("m4a") || contentType.includes("aac")) ext = "m4a";
+        else if (contentType.includes("wav")) ext = "wav";
+        else if (contentType.includes("ogg")) ext = "ogg";
+      }
+
+      const uniqueName = `song-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
+      const filePath = path.join(MUSIC_DIR, uniqueName);
+      fs.writeFileSync(filePath, buffer);
+
+      const cleanTitle = rawName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Bài hát của hai đứa";
+
+      return res.json({
+        success: true,
+        song: {
+          id: `upload-${Date.now()}`,
+          title: cleanTitle,
+          artist: "Nhạc tải lên từ máy",
+          mood: "Yêu thích",
+          url: `/music/${uniqueName}`,
+        },
+      });
+    } catch (err: any) {
+      console.error("Lỗi tải file nhạc lên:", err);
+      return res.status(500).json({
+        success: false,
+        message: err?.message || "Không thể lưu bài hát lúc này",
+      });
+    }
+  }
+);
+
+/**
+ * API: GET /api/audio/proxy
+ * Proxy luồng âm thanh hỗ trợ HTTP Range giúp phát ổn định link nhạc ngoài bị chặn CORS/Referer
+ */
+app.get("/api/audio/proxy", async (req, res) => {
+  try {
+    const targetUrl = String(req.query.url || "").trim();
+    if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+      return res.status(400).send("URL âm thanh không hợp lệ");
+    }
+
+    const range = req.headers.range;
+    const upstream = await fetch(targetUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        ...(range ? { Range: range } : {}),
+      },
+    });
+
+    if (!upstream.ok && upstream.status !== 206) {
+      return res.status(upstream.status).send("Không thể tải nguồn âm thanh");
+    }
+
+    res.status(upstream.status);
+    for (const [key, val] of upstream.headers.entries()) {
+      if (["content-type", "content-length", "content-range", "accept-ranges"].includes(key.toLowerCase())) {
+        res.setHeader(key, val);
+      }
+    }
+    res.setHeader("Accept-Ranges", "bytes");
+
+    if (upstream.body) {
+      const reader = upstream.body.getReader();
+      const pump = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          }
+          res.end();
+        } catch {
+          res.end();
+        }
+      };
+      pump();
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    console.warn("Lỗi audio proxy:", err);
+    res.status(500).send("Lỗi proxy âm thanh");
+  }
+});
 
 // Middleware phân tích JSON với dung lượng đủ lớn cho ảnh base64
 app.use(express.json({ limit: "15mb" }));
@@ -613,6 +831,14 @@ async function startServer() {
 
   if (isDev) {
     patchViteClientForHmr();
+    // Ngăn Safari trên iPhone cache trang HTML gốc khi mở bản dev
+    app.use((req, res, next) => {
+      if (req.path === "/" || req.path.endsWith(".html") || req.path === "/sw.js" || req.path === "/manifest.webmanifest") {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+      }
+      next();
+    });
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
@@ -623,8 +849,31 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          const baseName = path.basename(filePath);
+          // Không cache sw.js, registerSW.js, manifest và index.html để iPhone/Safari nhận bản cập nhật tức thì
+          if (
+            baseName === "index.html" ||
+            baseName === "sw.js" ||
+            baseName === "registerSW.js" ||
+            baseName === "manifest.webmanifest" ||
+            baseName.startsWith("workbox-")
+          ) {
+            res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          }
+        },
+      })
+    );
+    app.get("*", (_req, res) => {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.resolve(distPath, "index.html"));
     });
   }

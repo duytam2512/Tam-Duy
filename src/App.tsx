@@ -11,9 +11,11 @@ import { ReadingModeView } from './components/ReadingModeView';
 import { SnowEffect } from './components/SnowEffect';
 import { GooglePhotosVideoModal } from './components/GooglePhotosVideoModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { AppUpdateBanner } from './components/AppUpdateBanner';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { HandwrittenJournalModal } from './components/HandwrittenJournalModal';
 import { FontSettingsModal } from './components/FontSettingsModal';
+import { forceHardUpdateApp } from './utils/appUpdater';
 import {
   Memory,
   CoupleInfo,
@@ -34,6 +36,7 @@ import {
   subscribeToSharedMemories,
   saveSharedMemory,
   deleteSharedMemory,
+  deleteUploadedVideoFile,
   subscribeToSharedCoupleInfo,
   subscribeToSharedBgSettings,
   getStoredDiaryEntries,
@@ -217,10 +220,14 @@ export function App() {
 
   // Xóa kỷ niệm
   const handleDeleteMemory = async (id: string) => {
+    const target = memories.find((m) => m.id === id);
     const updated = memories.filter((m) => m.id !== id);
     setMemories(updated);
     saveMemoriesToStorage(updated);
     await deleteSharedMemory(id);
+    if (target?.videoUrl) {
+      await deleteUploadedVideoFile(target.videoUrl);
+    }
     if (selectedLightboxIndex !== null) {
       setSelectedLightboxIndex(null);
     }
@@ -379,6 +386,15 @@ export function App() {
             >
               📥 Tải file HTML 1 file độc lập
             </button>
+            <span className="text-[#8C6D58]/40">•</span>
+            <button
+              onClick={() => {
+                forceHardUpdateApp();
+              }}
+              className="text-[11px] text-[#8C6D58] hover:text-[#3D2E28] hover:underline cursor-pointer"
+            >
+              🔄 Cập nhật bản mới
+            </button>
           </div>
         </div>
       </footer>
@@ -480,6 +496,9 @@ export function App() {
         memories={memories}
         coupleInfo={coupleInfo}
       />
+
+      {/* Thông Báo Tự Động Khi Có Bản Cập Nhật Mới Trên iPhone / Web */}
+      <AppUpdateBanner />
 
       {/* Chỉ Báo Chế Độ Offline Cho PWA */}
       <OfflineIndicator />

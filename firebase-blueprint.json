@@ -27,7 +27,23 @@
         },
         "imageUrl": {
           "type": "string",
-          "description": "Đường dẫn ảnh hoặc base64 của kỷ niệm"
+          "description": "Đường dẫn ảnh hoặc ảnh đại diện (poster) của kỷ niệm"
+        },
+        "images": {
+          "type": "array",
+          "description": "Danh sách nhiều ảnh nếu kỷ niệm là album"
+        },
+        "mediaType": {
+          "type": "string",
+          "description": "Loại kỷ niệm: image hoặc video"
+        },
+        "videoUrl": {
+          "type": "string",
+          "description": "Đường dẫn phát video của kỷ niệm"
+        },
+        "videoDuration": {
+          "type": "number",
+          "description": "Thời lượng video (giây)"
         },
         "date": {
           "type": "string",

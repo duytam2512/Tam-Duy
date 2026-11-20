@@ -2,6 +2,9 @@ export interface Memory {
   id: string;
   imageUrl: string;
   images?: string[]; // Mảng nhiều ảnh nếu kỷ niệm là album nhiều ảnh
+  mediaType?: 'image' | 'video'; // Loại nội dung: ảnh hoặc video
+  videoUrl?: string; // Đường dẫn video (tải lên máy chủ hoặc link trực tiếp)
+  videoDuration?: number; // Thời lượng video tính bằng giây
   date: string; // YYYY-MM-DD
   location: string;
   caption: string;
@@ -525,31 +528,31 @@ export const DEFAULT_PLAYLIST: MusicTrack[] = [
   },
   {
     id: "track-3",
-    title: "Tiếng Mưa Rơi Êm Đềm",
-    artist: "Thiên Nhiên",
+    title: "Hoàng Hôn Êm Đềm",
+    artist: "Piano & Guitar",
     mood: "Thư giãn",
-    url: "https://actions.google.com/sounds/v1/weather/rain_heavy.ogg"
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
   },
   {
     id: "track-4",
-    title: "Tiếng Sóng Biển Hoàng Hôn",
-    artist: "Biển Chiều",
+    title: "Khúc Ca Bên Biển Chiều",
+    artist: "Soft Melody",
     mood: "Bình yên",
-    url: "https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg"
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3"
   },
   {
     id: "track-5",
-    title: "Tiếng Chim Hót Rừng Thông",
-    artist: "Đà Lạt Sáng Sớm",
+    title: "Sáng Sớm Đà Lạt",
+    artist: "Indie Chill",
     mood: "Tươi mới",
-    url: "https://actions.google.com/sounds/v1/ambiences/forest_birds.ogg"
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3"
   },
   {
     id: "track-6",
     title: "Khu Vườn Bình Yên",
     artist: "Giai Điệu Gió",
     mood: "Thư thái",
-    url: "https://actions.google.com/sounds/v1/ambiences/peaceful_outdoor.ogg"
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3"
   }
 ];
 

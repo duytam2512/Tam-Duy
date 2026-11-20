@@ -23,7 +23,8 @@ import {
   CheckCircle2,
   RefreshCw,
   GripVertical,
-  Move
+  Move,
+  Upload
 } from 'lucide-react';
 import { MusicTrack, DEFAULT_PLAYLIST } from '../types';
 import { extractYouTubeId, getYouTubeVideoInfoClient } from '../utils/youtube';
@@ -40,27 +41,27 @@ declare global {
   }
 }
 
-// Các bài hát mẫu YouTube tình yêu có sẵn link hoạt động mượt mà
+// Các bài hát mẫu YouTube tình yêu có sẵn link thật đã xác thực hoạt động mượt mà
 const YOUTUBE_PRESETS = [
   {
     name: 'Nàng Thơ - Hoàng Dũng',
-    url: 'https://www.youtube.com/watch?v=Z2t87K8u3QY'
+    url: 'https://www.youtube.com/watch?v=Zzn9-ATB9aU'
   },
   {
     name: 'Ngày Đầu Tiên - Đức Phúc',
-    url: 'https://www.youtube.com/watch?v=Gk7F72r_f7I'
+    url: 'https://www.youtube.com/watch?v=rIXhXaQ8tiM'
   },
   {
-    name: 'Ánh Nắng Của Anh',
-    url: 'https://www.youtube.com/watch?v=Q8Z_V7v6vHk'
+    name: 'Ánh Nắng Của Anh - Đức Phúc',
+    url: 'https://www.youtube.com/watch?v=ds_U7Ifvsx4'
   },
   {
-    name: 'Cơn Mưa Tình Yêu',
-    url: 'https://www.youtube.com/watch?v=rL0mY6Vf5Cg'
+    name: 'Em Đồng Ý (I Do) - Đức Phúc',
+    url: 'https://www.youtube.com/watch?v=IOe0tNoUGv8'
   },
   {
-    name: 'Hẹn Một Mai',
-    url: 'https://www.youtube.com/watch?v=oQxZ_kI3dHQ'
+    name: 'Có Chàng Trai Viết Lên Cây',
+    url: 'https://www.youtube.com/watch?v=0VC6euBtKkk'
   }
 ];
 
@@ -70,23 +71,29 @@ export const MusicPlayer: React.FC = () => {
 
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [volume, setVolume] = useState(0.65);
   const [isMuted, setIsMuted] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [widgetNotice, setWidgetNotice] = useState<string | null>(null);
 
   // In-app confirmation states
   const [trackToDelete, setTrackToDelete] = useState<{ id: string; title: string } | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  // Tab thêm nhạc: YouTube | MP3 thủ công | Zing MP3
-  const [activeAddTab, setActiveAddTab] = useState<'youtube' | 'manual' | 'zing'>('youtube');
+  // Tab thêm nhạc: YouTube | Tải từ máy | MP3 thủ công | Zing MP3
+  const [activeAddTab, setActiveAddTab] = useState<'youtube' | 'upload' | 'manual' | 'zing'>('youtube');
 
   // YouTube Music state
   const [youtubeInput, setYoutubeInput] = useState('');
   const [youtubeCustomTitle, setYoutubeCustomTitle] = useState('');
   const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
+
+  // Upload audio file from device state
+  const [isAudioUploading, setIsAudioUploading] = useState(false);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
 
   // Zing MP3 Downloader state
   const [zingInput, setZingInput] = useState('');
@@ -99,6 +106,14 @@ export const MusicPlayer: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const [isYtReady, setIsYtReady] = useState(false);
+  const loadedAudioUrlRef = useRef<string>('');
+  const loadedYtIdRef = useRef<string>('');
+  const pendingYtPlayRef = useRef<string | null>(null);
+  const usedProxyForUrlRef = useRef<string>('');
+  const consecutiveErrorsRef = useRef<number>(0);
+  const volumeRef = useRef<number>(volume);
+  const isMutedRef = useRef<boolean>(isMuted);
+  const isPlayingRef = useRef<boolean>(isPlaying);
 
   // Vị trí linh hoạt của máy phát nhạc (Draggable Music Player)
   const widgetRef = useRef<HTMLDivElement>(null);
@@ -258,12 +273,151 @@ export const MusicPlayer: React.FC = () => {
 
   const currentTrack = playlist[currentTrackIndex] || playlist[0];
 
+  useEffect(() => {
+    volumeRef.current = volume;
+    isMutedRef.current = isMuted;
+    isPlayingRef.current = isPlaying;
+  }, [volume, isMuted, isPlaying]);
+
+  const showNotice = useCallback((msg: string, duration = 3800) => {
+    setWidgetNotice(msg);
+    setToastMessage(msg);
+    window.setTimeout(() => {
+      setWidgetNotice((prev) => (prev === msg ? null : prev));
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, duration);
+  }, []);
+
+  // Hàm phát bài hát đồng bộ trực tiếp trong ngữ cảnh tương tác (hỗ trợ 100% iPhone Safari & Chrome)
+  const playTrackDirect = useCallback(
+    (track: MusicTrack | undefined, shouldPlay: boolean) => {
+      if (!track) return;
+      const effectiveVolume = isMutedRef.current ? 0 : volumeRef.current;
+
+      if (track.isYouTube && track.youtubeId) {
+        if (audioRef.current) {
+          audioRef.current.pause();
+        }
+
+        if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
+          try {
+            if (typeof ytPlayerRef.current.unMute === 'function' && !isMutedRef.current) {
+              ytPlayerRef.current.unMute();
+            }
+            if (typeof ytPlayerRef.current.setVolume === 'function') {
+              ytPlayerRef.current.setVolume(Math.round(effectiveVolume * 100));
+            }
+            if (shouldPlay) {
+              setIsBuffering(true);
+              if (loadedYtIdRef.current !== track.youtubeId) {
+                loadedYtIdRef.current = track.youtubeId;
+                ytPlayerRef.current.loadVideoById(track.youtubeId);
+              } else {
+                ytPlayerRef.current.playVideo();
+              }
+              setIsPlaying(true);
+            } else {
+              if (loadedYtIdRef.current !== track.youtubeId) {
+                loadedYtIdRef.current = track.youtubeId;
+                ytPlayerRef.current.cueVideoById(track.youtubeId);
+              } else {
+                ytPlayerRef.current.pauseVideo();
+              }
+              setIsPlaying(false);
+              setIsBuffering(false);
+            }
+          } catch (err) {
+            console.warn('Lỗi điều khiển YouTube Player:', err);
+            setIsBuffering(false);
+          }
+        } else if (shouldPlay) {
+          // YouTube API đang nạp -> ghi nhớ để phát ngay khi onReady
+          pendingYtPlayRef.current = track.youtubeId;
+          setIsBuffering(true);
+          setIsPlaying(true);
+        }
+      } else {
+        // Dừng YouTube nếu đang chạy
+        if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+          try {
+            ytPlayerRef.current.pauseVideo();
+          } catch {}
+        }
+
+        const audio = audioRef.current;
+        if (!audio) return;
+
+        audio.volume = effectiveVolume;
+        audio.muted = isMutedRef.current;
+
+        const targetUrl = track.url;
+        const needsReload = loadedAudioUrlRef.current !== targetUrl;
+        if (needsReload) {
+          usedProxyForUrlRef.current = '';
+          loadedAudioUrlRef.current = targetUrl;
+          audio.src = targetUrl;
+          audio.load();
+        }
+
+        if (shouldPlay) {
+          setIsBuffering(true);
+          const playPromise = audio.play();
+          if (playPromise && typeof playPromise.then === 'function') {
+            playPromise
+              .then(() => {
+                consecutiveErrorsRef.current = 0;
+                setIsPlaying(true);
+                setIsBuffering(false);
+              })
+              .catch((err: any) => {
+                console.warn('Lỗi phát HTML5 Audio:', err?.name, err?.message);
+                setIsBuffering(false);
+                if (err?.name === 'NotAllowedError') {
+                  setIsPlaying(false);
+                  showNotice('🔊 Hãy bấm nút Phát một lần nữa để mở âm thanh trên trình duyệt nhé!');
+                } else if (err?.name !== 'AbortError') {
+                  setIsPlaying(false);
+                }
+              });
+          } else {
+            setIsPlaying(true);
+            setIsBuffering(false);
+          }
+        } else {
+          audio.pause();
+          setIsPlaying(false);
+          setIsBuffering(false);
+        }
+      }
+    },
+    [showNotice]
+  );
+
+  const handleNext = useCallback(() => {
+    if (playlist.length === 0) return;
+    const nextIdx = (currentTrackIndex + 1) % playlist.length;
+    setCurrentTrackIndex(nextIdx);
+    playTrackDirect(playlist[nextIdx], true);
+  }, [playlist, currentTrackIndex, playTrackDirect]);
+
+  const handlePrev = useCallback(() => {
+    if (playlist.length === 0) return;
+    const prevIdx = (currentTrackIndex - 1 + playlist.length) % playlist.length;
+    setCurrentTrackIndex(prevIdx);
+    playTrackDirect(playlist[prevIdx], true);
+  }, [playlist, currentTrackIndex, playTrackDirect]);
+
+  const handleNextRef = useRef(handleNext);
+  useEffect(() => {
+    handleNextRef.current = handleNext;
+  }, [handleNext]);
+
   // 1. TỰ ĐỘNG ĐỒNG BỘ PLAYLIST THỜI GIAN THỰC TỪ CLOUD FIRESTORE
-  // Giúp bài hát thêm trên Cốc Cốc laptop ngay lập tức xuất hiện trên điện thoại & nền tảng khác
   useEffect(() => {
     const unsubscribe = subscribeToSharedPlaylist((sharedTracks) => {
       if (sharedTracks && sharedTracks.length > 0) {
         setPlaylist(sharedTracks);
+        setCurrentTrackIndex((prev) => (prev >= sharedTracks.length ? 0 : prev));
         setIsCloudSynced(true);
       }
     });
@@ -271,37 +425,71 @@ export const MusicPlayer: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. KHỞI TẠO YOUTUBE IFRAME API
+  // 2. KHỞI TẠO YOUTUBE IFRAME API (Có hỗ trợ origin, unMute và bắt lỗi tự động chuyển bài)
   useEffect(() => {
     const initYT = () => {
       if (window.YT && window.YT.Player) {
         if (!ytPlayerRef.current) {
           try {
             ytPlayerRef.current = new window.YT.Player('yt-player-target', {
-              height: '200',
-              width: '200',
+              height: '124',
+              width: '220',
               playerVars: {
                 playsinline: 1,
-                controls: 0,
+                controls: 1,
                 disablekb: 1,
                 modestbranding: 1,
-                rel: 0
+                rel: 0,
+                enablejsapi: 1,
+                origin: window.location.origin
               },
               events: {
                 onReady: () => {
                   setIsYtReady(true);
-                  if (ytPlayerRef.current?.setVolume) {
-                    ytPlayerRef.current.setVolume(isMuted ? 0 : Math.round(volume * 100));
+                  try {
+                    if (ytPlayerRef.current?.setVolume) {
+                      ytPlayerRef.current.setVolume(
+                        isMutedRef.current ? 0 : Math.round(volumeRef.current * 100)
+                      );
+                    }
+                    if (!isMutedRef.current && ytPlayerRef.current?.unMute) {
+                      ytPlayerRef.current.unMute();
+                    }
+                    if (pendingYtPlayRef.current && ytPlayerRef.current?.loadVideoById) {
+                      const vid = pendingYtPlayRef.current;
+                      pendingYtPlayRef.current = null;
+                      loadedYtIdRef.current = vid;
+                      ytPlayerRef.current.loadVideoById(vid);
+                    }
+                  } catch (e) {
+                    console.warn('Lỗi cấu hình YouTube Player onReady:', e);
                   }
                 },
                 onStateChange: (event: any) => {
-                  // YT.PlayerState.ENDED = 0
+                  // 0=ENDED, 1=PLAYING, 2=PAUSED, 3=BUFFERING
                   if (event.data === 0) {
-                    handleNext();
+                    handleNextRef.current();
                   } else if (event.data === 1) {
+                    consecutiveErrorsRef.current = 0;
                     setIsPlaying(true);
+                    setIsBuffering(false);
                   } else if (event.data === 2) {
                     setIsPlaying(false);
+                    setIsBuffering(false);
+                  } else if (event.data === 3) {
+                    setIsBuffering(true);
+                  }
+                },
+                onError: (event: any) => {
+                  console.warn('Lỗi phát video YouTube (mã lỗi):', event?.data);
+                  setIsBuffering(false);
+                  consecutiveErrorsRef.current += 1;
+                  if (consecutiveErrorsRef.current < Math.max(2, playlist.length)) {
+                    showNotice('⚠️ Video YouTube này bị chặn nhúng hoặc lỗi link, đang chuyển sang bài tiếp theo...');
+                    window.setTimeout(() => handleNextRef.current(), 800);
+                  } else {
+                    setIsPlaying(false);
+                    showNotice('⚠️ Không phát được bài hát này. Hãy thử chọn bài khác hoặc tải MP3 từ máy!');
                   }
                 }
               }
@@ -314,25 +502,34 @@ export const MusicPlayer: React.FC = () => {
     };
 
     if (!window.YT) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
+      const existingScript = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
       window.onYouTubeIframeAPIReady = () => {
         initYT();
       };
-      document.body.appendChild(tag);
+      if (!existingScript) {
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        document.body.appendChild(tag);
+      }
     } else {
       initYT();
     }
-  }, []);
+  }, [playlist.length, showNotice]);
 
   // Đồng bộ âm lượng cho cả HTML Audio và YouTube Player
   useEffect(() => {
     const effectiveVolume = isMuted ? 0 : volume;
     if (audioRef.current) {
       audioRef.current.volume = effectiveVolume;
+      audioRef.current.muted = isMuted;
     }
     if (ytPlayerRef.current && typeof ytPlayerRef.current.setVolume === 'function') {
       try {
+        if (isMuted && typeof ytPlayerRef.current.mute === 'function') {
+          ytPlayerRef.current.mute();
+        } else if (!isMuted && typeof ytPlayerRef.current.unMute === 'function') {
+          ytPlayerRef.current.unMute();
+        }
         ytPlayerRef.current.setVolume(Math.round(effectiveVolume * 100));
       } catch (err) {
         console.warn('Lỗi đặt âm lượng YouTube:', err);
@@ -340,91 +537,127 @@ export const MusicPlayer: React.FC = () => {
     }
   }, [volume, isMuted]);
 
-  // Đổi bài hát
+  // Chuẩn bị nguồn phát khi playlist lần đầu đồng bộ hoặc YouTube Player vừa sẵn sàng
   useEffect(() => {
     if (!currentTrack) return;
-
     if (currentTrack.isYouTube && currentTrack.youtubeId) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
+      if (isYtReady && ytPlayerRef.current && loadedYtIdRef.current !== currentTrack.youtubeId) {
         try {
-          if (isPlaying) {
+          loadedYtIdRef.current = currentTrack.youtubeId;
+          if (isPlayingRef.current) {
             ytPlayerRef.current.loadVideoById(currentTrack.youtubeId);
           } else {
             ytPlayerRef.current.cueVideoById(currentTrack.youtubeId);
           }
-        } catch (err) {
-          console.warn('Lỗi nạp video YouTube:', err);
-        }
+        } catch {}
       }
-    } else {
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
-        try {
-          ytPlayerRef.current.pauseVideo();
-        } catch (err) {
-          console.warn('Lỗi dừng YouTube:', err);
-        }
-      }
-
-      if (audioRef.current) {
-        audioRef.current.src = currentTrack.url;
-        if (isPlaying) {
-          audioRef.current.play().catch((err) => {
-            console.log('Autoplay chờ tương tác người dùng:', err);
-            setIsPlaying(false);
-          });
-        }
-      }
+    } else if (audioRef.current && loadedAudioUrlRef.current !== currentTrack.url) {
+      loadedAudioUrlRef.current = currentTrack.url;
+      audioRef.current.src = currentTrack.url;
+      audioRef.current.preload = 'auto';
     }
-  }, [currentTrackIndex, isYtReady]);
+  }, [currentTrack?.id, currentTrack?.url, currentTrack?.youtubeId, isYtReady]);
 
   const togglePlay = () => {
-    if (currentTrack?.isYouTube && currentTrack.youtubeId) {
-      if (!ytPlayerRef.current || typeof ytPlayerRef.current.playVideo !== 'function') return;
-
-      if (isPlaying) {
-        ytPlayerRef.current.pauseVideo();
-        setIsPlaying(false);
-      } else {
-        if (audioRef.current) audioRef.current.pause();
-        ytPlayerRef.current.playVideo();
-        setIsPlaying(true);
-      }
+    if (!currentTrack) return;
+    consecutiveErrorsRef.current = 0;
+    if (isPlaying) {
+      playTrackDirect(currentTrack, false);
     } else {
-      if (!audioRef.current) return;
-
-      if (isPlaying) {
-        audioRef.current.pause();
-        setIsPlaying(false);
-      } else {
-        if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
-          ytPlayerRef.current.pauseVideo();
-        }
-        audioRef.current.play().then(() => {
-          setIsPlaying(true);
-        }).catch((err) => {
-          console.warn('Chưa thể phát nhạc tự động (chờ tương tác):', err);
-          setIsPlaying(false);
-        });
-      }
+      playTrackDirect(currentTrack, true);
     }
   };
 
-  const handleNext = useCallback(() => {
-    setCurrentTrackIndex((prev) => (prev + 1) % playlist.length);
-  }, [playlist.length]);
-
-  const handlePrev = useCallback(() => {
-    setCurrentTrackIndex((prev) => (prev - 1 + playlist.length) % playlist.length);
-  }, [playlist.length]);
-
   const handleSelectTrack = (index: number) => {
+    const target = playlist[index];
+    if (!target) return;
+    consecutiveErrorsRef.current = 0;
     setCurrentTrackIndex(index);
-    setIsPlaying(true);
     setShowPlaylistModal(false);
+    playTrackDirect(target, true);
+  };
+
+  // Xử lý lỗi phát HTML5 Audio: thử proxy /api/audio/proxy 1 lần cho link ngoài, nếu vẫn lỗi thì chuyển bài
+  const handleAudioError = () => {
+    if (!currentTrack || currentTrack.isYouTube) return;
+    const audio = audioRef.current;
+    const originalUrl = currentTrack.url;
+
+    // Nếu là link https bên ngoài và chưa thử qua proxy -> thử phát qua server proxy để vượt CORS/Referer
+    if (
+      audio &&
+      /^https?:\/\//i.test(originalUrl) &&
+      usedProxyForUrlRef.current !== originalUrl &&
+      isPlayingRef.current
+    ) {
+      usedProxyForUrlRef.current = originalUrl;
+      const proxied = `/api/audio/proxy?url=${encodeURIComponent(originalUrl)}`;
+      loadedAudioUrlRef.current = proxied;
+      audio.src = proxied;
+      audio.load();
+      audio.play().catch(() => {
+        setIsBuffering(false);
+      });
+      return;
+    }
+
+    setIsBuffering(false);
+    consecutiveErrorsRef.current += 1;
+
+    if (isPlayingRef.current && consecutiveErrorsRef.current < Math.max(2, playlist.length)) {
+      showNotice(`⚠️ Không tải được "${currentTrack.title}", tự động chuyển bài tiếp theo...`);
+      window.setTimeout(() => handleNextRef.current(), 700);
+    } else {
+      setIsPlaying(false);
+      showNotice(`⚠️ Không thể phát "${currentTrack.title}". Hãy bấm "Khôi phục bài gốc" hoặc tải file MP3 từ máy!`);
+    }
+  };
+
+  // Tải file nhạc MP3/M4A/WAV trực tiếp từ máy tính / điện thoại lên máy chủ
+  const handleUploadAudioFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      showNotice('⚠️ File nhạc vượt quá 25MB. Bạn vui lòng chọn file nhẹ hơn nhé!');
+      if (audioFileInputRef.current) audioFileInputRef.current.value = '';
+      return;
+    }
+
+    setIsAudioUploading(true);
+    setToastMessage(`Đang tải lên "${file.name}"...`);
+
+    try {
+      const response = await fetch('/api/music/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.type || 'audio/mpeg',
+          'X-File-Name': encodeURIComponent(file.name)
+        },
+        body: file
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data?.success || !data?.song) {
+        throw new Error(data?.message || 'Không thể tải file nhạc lên máy chủ');
+      }
+
+      const newSong: MusicTrack = data.song;
+      const updated = [...playlist, newSong];
+      setPlaylist(updated);
+      await savePlaylistBoth(updated);
+
+      const newIndex = updated.length - 1;
+      setCurrentTrackIndex(newIndex);
+      playTrackDirect(newSong, true);
+      showNotice(`🎵 Đã tải lên "${newSong.title}" & đồng bộ lên mọi thiết bị!`);
+    } catch (err: any) {
+      console.warn('Lỗi tải nhạc từ máy:', err);
+      showNotice(`⚠️ ${err?.message || 'Không thể tải file nhạc lên lúc này'}`);
+    } finally {
+      setIsAudioUploading(false);
+      if (audioFileInputRef.current) audioFileInputRef.current.value = '';
+    }
   };
 
   // Nút bấm đồng bộ thủ công danh sách bài hát lên Cloud
@@ -432,8 +665,7 @@ export const MusicPlayer: React.FC = () => {
     setIsCloudSynced(false);
     await savePlaylistBoth(playlist);
     setIsCloudSynced(true);
-    setToastMessage('☁️ Đã đồng bộ bài hát lên Cloud! Điện thoại và máy tính khác đều đã lưu.');
-    setTimeout(() => setToastMessage(null), 4000);
+    showNotice('☁️ Đã đồng bộ bài hát lên Cloud! Điện thoại và máy tính khác đều đã lưu.');
   };
 
   // Thêm nhạc từ link MP3 thủ công
@@ -456,9 +688,8 @@ export const MusicPlayer: React.FC = () => {
     setCustomTitle('');
     setCustomUrl('');
     setCurrentTrackIndex(updated.length - 1);
-    setIsPlaying(true);
-    setToastMessage(`☁️ Đã thêm "${newTrack.title}" và đồng bộ lên tất cả thiết bị!`);
-    setTimeout(() => setToastMessage(null), 3500);
+    playTrackDirect(newTrack, true);
+    showNotice(`☁️ Đã thêm "${newTrack.title}" và đồng bộ lên tất cả thiết bị!`);
   };
 
   /**
@@ -553,15 +784,9 @@ export const MusicPlayer: React.FC = () => {
       setYoutubeInput('');
       setYoutubeCustomTitle('');
       setCurrentTrackIndex(targetIdx);
-      setIsPlaying(true);
+      playTrackDirect(newSong, true);
 
-      if (newSong.youtubeId && ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
-        if (audioRef.current) audioRef.current.pause();
-        ytPlayerRef.current.loadVideoById(newSong.youtubeId);
-      }
-
-      setToastMessage(`🎉 Đã thêm "${newSong.title}" & đồng bộ trên mọi thiết bị!`);
-      setTimeout(() => setToastMessage(null), 4000);
+      showNotice(`🎉 Đã thêm "${newSong.title}" & đồng bộ trên mọi thiết bị!`);
     } catch (err: any) {
       console.warn('Lỗi thêm nhạc YouTube:', err);
       setToastMessage(`⚠️ ${err.message || 'Không thể thêm bài từ YouTube. Bạn vui lòng kiểm tra lại link nhé!'}`);
@@ -616,19 +841,9 @@ export const MusicPlayer: React.FC = () => {
 
       setZingInput('');
       setCurrentTrackIndex(targetIdx);
-      setIsPlaying(true);
+      playTrackDirect(newSong, true);
 
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
-        ytPlayerRef.current.pauseVideo();
-      }
-
-      if (audioRef.current) {
-        audioRef.current.src = newSong.url;
-        audioRef.current.play().catch(() => setIsPlaying(false));
-      }
-
-      setToastMessage(`🎉 Đã tải "${newSong.title}" & đồng bộ trên mọi thiết bị!`);
-      setTimeout(() => setToastMessage(null), 4000);
+      showNotice(`🎉 Đã tải "${newSong.title}" & đồng bộ trên mọi thiết bị!`);
     } catch (err: any) {
       console.warn('Lỗi tải Zing MP3:', err);
       setToastMessage(`⚠️ ${err.message || 'Không thể tải bài hát từ Zing MP3. Hãy dùng tab Link YouTube nhé!'}`);
@@ -670,34 +885,16 @@ export const MusicPlayer: React.FC = () => {
     if (trackIndex === currentTrackIndex) {
       const nextIdx = trackIndex >= updated.length ? 0 : trackIndex;
       setCurrentTrackIndex(nextIdx);
-
       const nextTrack = updated[nextIdx];
       if (nextTrack) {
-        if (nextTrack.isYouTube && nextTrack.youtubeId) {
-          if (audioRef.current) audioRef.current.pause();
-          if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
-            if (isPlaying) ytPlayerRef.current.loadVideoById(nextTrack.youtubeId);
-            else ytPlayerRef.current.cueVideoById(nextTrack.youtubeId);
-          }
-        } else {
-          if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
-            ytPlayerRef.current.pauseVideo();
-          }
-          if (audioRef.current) {
-            audioRef.current.src = nextTrack.url;
-            if (isPlaying) {
-              audioRef.current.play().catch(() => setIsPlaying(false));
-            }
-          }
-        }
+        playTrackDirect(nextTrack, isPlayingRef.current);
       }
     } else if (trackIndex < currentTrackIndex) {
       setCurrentTrackIndex((prev) => prev - 1);
     }
 
     setTrackToDelete(null);
-    setToastMessage(`🗑️ Đã xóa "${trackTitle}" và đồng bộ trên mọi thiết bị!`);
-    setTimeout(() => setToastMessage(null), 3000);
+    showNotice(`🗑️ Đã xóa "${trackTitle}" và đồng bộ trên mọi thiết bị!`, 3000);
   };
 
   // Thực hiện khôi phục 6 bài hát gốc ban đầu
@@ -705,21 +902,11 @@ export const MusicPlayer: React.FC = () => {
     setPlaylist(DEFAULT_PLAYLIST);
     await savePlaylistBoth(DEFAULT_PLAYLIST);
 
-    if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
-      ytPlayerRef.current.pauseVideo();
-    }
-
     setCurrentTrackIndex(0);
-    if (audioRef.current) {
-      audioRef.current.src = DEFAULT_PLAYLIST[0].url;
-      if (isPlaying) {
-        audioRef.current.play().catch(() => setIsPlaying(false));
-      }
-    }
+    playTrackDirect(DEFAULT_PLAYLIST[0], isPlayingRef.current);
 
     setShowResetConfirm(false);
-    setToastMessage('✨ Đã khôi phục 6 bài hát gốc trên mọi thiết bị!');
-    setTimeout(() => setToastMessage(null), 3000);
+    showNotice('✨ Đã khôi phục 6 bài hát gốc trên mọi thiết bị!', 3000);
   };
 
   const handleAudioEnded = () => {
@@ -731,19 +918,33 @@ export const MusicPlayer: React.FC = () => {
       {/* HTML5 Audio Player cho nhạc MP3 cục bộ & link âm thanh trực tiếp */}
       <audio
         ref={audioRef}
-        src={currentTrack?.isYouTube ? undefined : currentTrack?.url}
-        onEnded={handleAudioEnded}
-        onError={() => {
-          console.warn('Lỗi tải bài hát, tự động chuyển bài tiếp theo');
+        playsInline
+        preload="auto"
+        onPlay={() => {
+          setIsPlaying(true);
+          setIsBuffering(false);
         }}
+        onPause={() => {
+          if (!currentTrack?.isYouTube) {
+            setIsPlaying(false);
+          }
+        }}
+        onWaiting={() => setIsBuffering(true)}
+        onCanPlay={() => setIsBuffering(false)}
+        onEnded={handleAudioEnded}
+        onError={handleAudioError}
       />
 
-      {/* Hidden YouTube Player Target */}
+      {/* YouTube Player giữ trong khung nhìn (tránh bị Chrome/Safari chặn phát ngầm khi ẩn ngoài màn hình) */}
       <div
-        className="fixed -left-[9999px] -top-[9999px] w-[200px] h-[200px] pointer-events-none opacity-0 overflow-hidden"
-        aria-hidden="true"
+        className={
+          currentTrack?.isYouTube && isExpanded
+            ? 'fixed bottom-24 left-4 z-40 w-[220px] h-[124px] rounded-2xl overflow-hidden shadow-2xl border-2 border-[#E8A598]/60 bg-black'
+            : 'fixed bottom-0 right-0 w-[2px] h-[2px] opacity-[0.02] pointer-events-none overflow-hidden z-0'
+        }
+        aria-hidden={!(currentTrack?.isYouTube && isExpanded)}
       >
-        <div id="yt-player-target" />
+        <div id="yt-player-target" className="w-full h-full" />
       </div>
 
       {/* Floating Music Widget (Di chuyển linh hoạt khắp màn hình - Mobile & Desktop) */}
@@ -773,6 +974,11 @@ export const MusicPlayer: React.FC = () => {
         }`}
       >
         <div className="bg-[#FFFDF9]/95 backdrop-blur-md rounded-2xl border border-[#8C6D58]/20 overflow-hidden relative">
+          {widgetNotice && !showPlaylistModal && (
+            <div className="px-3 py-1.5 bg-[#FFF4EE] border-b border-[#E8A598]/40 text-[10px] text-[#B8634B] font-medium max-w-[270px] leading-snug">
+              {widgetNotice}
+            </div>
+          )}
           {/* Thanh Player Compact */}
           <div className="p-2 sm:p-2.5 flex items-center gap-2">
             {/* Nút kéo di chuyển tiện lợi (Grip Handle) */}
@@ -862,7 +1068,9 @@ export const MusicPlayer: React.FC = () => {
                 className="p-1.5 rounded-full bg-[#E8A598] hover:bg-[#D98A76] text-white shadow-xs transition-all active:scale-95 cursor-pointer"
                 title={isPlaying ? 'Tạm dừng' : 'Phát'}
               >
-                {isPlaying ? (
+                {isBuffering ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : isPlaying ? (
                   <Pause className="w-3.5 h-3.5 fill-white" />
                 ) : (
                   <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
@@ -1100,32 +1308,44 @@ export const MusicPlayer: React.FC = () => {
               </button>
             </div>
 
-            {/* PHẦN THÊM BÀI HÁT: YOUTUBE | MP3 THỦ CÔNG | ZING MP3 */}
+            {/* PHẦN THÊM BÀI HÁT: YOUTUBE | TẢI TỪ MÁY | MP3 THỦ CÔNG | ZING MP3 */}
             <div className="pt-3 border-t border-[#8C6D58]/10 mt-2">
               <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('youtube')}
-                  className={`text-xs px-3 py-1 rounded-full font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-all flex items-center gap-1 cursor-pointer ${
                     activeAddTab === 'youtube'
                       ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-2xs'
                       : 'bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28]'
                   }`}
                 >
                   <Youtube className="w-3.5 h-3.5" />
-                  <span>Link YouTube (Lưu đám mây)</span>
+                  <span>YouTube</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAddTab('upload')}
+                  className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                    activeAddTab === 'upload'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-2xs'
+                      : 'bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28]'
+                  }`}
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>Tải nhạc từ máy</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('manual')}
-                  className={`text-xs px-3 py-1 rounded-full font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all flex items-center gap-1 cursor-pointer ${
                     activeAddTab === 'manual'
                       ? 'bg-gradient-to-r from-[#D98A76] to-[#C87D55] text-white shadow-2xs'
                       : 'bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28]'
                   }`}
                 >
                   <Link2 className="w-3 h-3" />
-                  <span>Link MP3 trực tiếp</span>
+                  <span>Link MP3</span>
                 </button>
                 <button
                   type="button"
@@ -1141,7 +1361,46 @@ export const MusicPlayer: React.FC = () => {
                 </button>
               </div>
 
-              {activeAddTab === 'youtube' ? (
+              {activeAddTab === 'upload' ? (
+                /* TAB TẢI FILE NHẠC TRỰC TIẾP TỪ MÁY (MP3 / M4A / WAV) */
+                <div className="bg-[#FAF7F2] p-3.5 rounded-2xl border border-emerald-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#3D2E28] flex items-center gap-1">
+                      <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Tải file nhạc từ điện thoại / máy tính:</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded-sm">Phát ổn định 100%</span>
+                  </div>
+                  <label
+                    htmlFor="music-file-upload-input"
+                    className={`flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl border-2 border-dashed transition-all cursor-pointer text-xs font-semibold ${
+                      isAudioUploading
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 pointer-events-none'
+                        : 'border-emerald-300 hover:border-emerald-500 bg-white hover:bg-emerald-50/50 text-[#3D2E28]'
+                    }`}
+                  >
+                    {isAudioUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                        <span>Đang tải bài hát lên...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Music className="w-4 h-4 text-emerald-600" />
+                        <span>Chọn file .MP3 / .M4A / .WAV (tối đa 25MB)</span>
+                      </>
+                    )}
+                  </label>
+                  <input
+                    id="music-file-upload-input"
+                    ref={audioFileInputRef}
+                    type="file"
+                    accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg"
+                    onChange={handleUploadAudioFile}
+                    className="sr-only"
+                  />
+                </div>
+              ) : activeAddTab === 'youtube' ? (
                 /* TAB 1: THÊM NHẠC TỪ LINK YOUTUBE (ĐỒNG BỘ 100% TRÊN VERCEL VÀ MỌI NỀN TẢNG) */
                 <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-red-200">
                   <div className="flex items-center justify-between mb-1.5">

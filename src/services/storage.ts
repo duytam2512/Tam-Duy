@@ -48,12 +48,85 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
    1. QUẢN LÝ DANH SÁCH NHẠC (PLAYLIST) - ĐỒNG BỘ CLOUD FIRESTORE + LOCALSTORAGE
    ========================================================================= */
 
+const BROKEN_AUDIO_REPLACEMENTS: Record<string, { url: string; title?: string; artist?: string }> = {
+  'https://actions.google.com/sounds/v1/weather/rain_heavy.ogg': {
+    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+    title: 'Hoàng Hôn Êm Đềm',
+    artist: 'Piano & Guitar'
+  },
+  'https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg': {
+    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
+    title: 'Khúc Ca Bên Biển Chiều',
+    artist: 'Soft Melody'
+  },
+  'https://actions.google.com/sounds/v1/ambiences/forest_birds.ogg': {
+    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',
+    title: 'Sáng Sớm Đà Lạt',
+    artist: 'Indie Chill'
+  },
+  'https://actions.google.com/sounds/v1/ambiences/peaceful_outdoor.ogg': {
+    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3',
+    title: 'Khu Vườn Bình Yên',
+    artist: 'Giai Điệu Gió'
+  }
+};
+
+const BROKEN_YOUTUBE_ID_REPLACEMENTS: Record<string, { youtubeId: string; title?: string }> = {
+  'Z2t87K8u3QY': { youtubeId: 'Zzn9-ATB9aU', title: 'Nàng Thơ - Hoàng Dũng' },
+  'Gk7F72r_f7I': { youtubeId: 'rIXhXaQ8tiM', title: 'Ngày Đầu Tiên - Đức Phúc' },
+  'Q8Z_V7v6vHk': { youtubeId: 'ds_U7Ifvsx4', title: 'Ánh Nắng Của Anh - Đức Phúc' },
+  'rL0mY6Vf5Cg': { youtubeId: 'IOe0tNoUGv8', title: 'Em Đồng Ý (I Do) - Đức Phúc' },
+  'oQxZ_kI3dHQ': { youtubeId: '0VC6euBtKkk', title: 'Có Chàng Trai Viết Lên Cây - Phan Mạnh Quỳnh' }
+};
+
+export const sanitizePlaylistTracks = (tracks: MusicTrack[]): { tracks: MusicTrack[]; repaired: boolean } => {
+  let repaired = false;
+  const sanitized = tracks.map((track) => {
+    if (track.url && BROKEN_AUDIO_REPLACEMENTS[track.url]) {
+      repaired = true;
+      const rep = BROKEN_AUDIO_REPLACEMENTS[track.url];
+      return {
+        ...track,
+        url: rep.url,
+        title: track.title || rep.title || 'Giai Điệu Bình Yên',
+        artist: track.artist || rep.artist || 'Acoustic'
+      };
+    }
+
+    if (track.youtubeId && BROKEN_YOUTUBE_ID_REPLACEMENTS[track.youtubeId]) {
+      repaired = true;
+      const rep = BROKEN_YOUTUBE_ID_REPLACEMENTS[track.youtubeId];
+      return {
+        ...track,
+        id: `yt-${rep.youtubeId}`,
+        youtubeId: rep.youtubeId,
+        url: `https://www.youtube.com/watch?v=${rep.youtubeId}`,
+        thumbnail: `https://i.ytimg.com/vi/${rep.youtubeId}/hqdefault.jpg`,
+        isYouTube: true
+      };
+    }
+
+    return track;
+  });
+
+  return { tracks: sanitized, repaired };
+};
+
 export const getStoredPlaylist = (): MusicTrack[] => {
   try {
     const raw = localStorage.getItem(PLAYLIST_KEY);
     if (!raw) return DEFAULT_PLAYLIST;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PLAYLIST;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const { tracks, repaired } = sanitizePlaylistTracks(parsed);
+      if (repaired) {
+        try {
+          localStorage.setItem(PLAYLIST_KEY, JSON.stringify(tracks));
+        } catch {}
+      }
+      return tracks;
+    }
+    return DEFAULT_PLAYLIST;
   } catch (err) {
     console.warn('Lỗi đọc playlist từ localStorage:', err);
     return DEFAULT_PLAYLIST;
@@ -66,9 +139,10 @@ export const getStoredPlaylist = (): MusicTrack[] => {
  * trên điện thoại, máy tính bảng và mọi trình duyệt khác khi truy cập web!
  */
 export const savePlaylistBoth = async (playlist: MusicTrack[]): Promise<void> => {
+  const { tracks: cleanTracks } = sanitizePlaylistTracks(playlist);
   // 1. Lưu ngay vào localStorage của thiết bị hiện tại
   try {
-    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(playlist));
+    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(cleanTracks));
   } catch (err) {
     console.warn('Lỗi lưu playlist vào localStorage:', err);
   }
@@ -77,7 +151,7 @@ export const savePlaylistBoth = async (playlist: MusicTrack[]): Promise<void> =>
   try {
     const playlistDocRef = doc(db, 'shared_data', 'playlist');
     await setDoc(playlistDocRef, {
-      tracks: playlist,
+      tracks: cleanTracks,
       updatedAt: Date.now()
     });
   } catch (err) {
@@ -99,13 +173,24 @@ export const subscribeToSharedPlaylist = (
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+          const { tracks: cleanTracks, repaired } = sanitizePlaylistTracks(data.tracks);
           // Cập nhật localStorage để lưu offline
           try {
-            localStorage.setItem(PLAYLIST_KEY, JSON.stringify(data.tracks));
+            localStorage.setItem(PLAYLIST_KEY, JSON.stringify(cleanTracks));
           } catch (e) {
             console.warn('Lỗi cache playlist:', e);
           }
-          onUpdate(data.tracks);
+          onUpdate(cleanTracks);
+
+          // Nếu có bài bị link hỏng đã được tự sửa -> cập nhật lại Cloud luôn cho tất cả thiết bị
+          if (repaired) {
+            try {
+              await setDoc(playlistDocRef, {
+                tracks: cleanTracks,
+                updatedAt: Date.now()
+              });
+            } catch {}
+          }
           return;
         }
       }
@@ -248,8 +333,12 @@ export const subscribeToSharedMemories = (
 
 export const saveSharedMemory = async (memory: Memory): Promise<boolean> => {
   try {
+    // Loại bỏ các trường undefined trước khi ghi vào Firestore
+    const cleanMemory = Object.fromEntries(
+      Object.entries(memory).filter(([, value]) => value !== undefined)
+    );
     const memDocRef = doc(db, 'memories', memory.id);
-    await setDoc(memDocRef, memory);
+    await setDoc(memDocRef, cleanMemory);
     return true;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `memories/${memory.id}`);
@@ -265,6 +354,19 @@ export const deleteSharedMemory = async (id: string): Promise<boolean> => {
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `memories/${id}`);
     return false;
+  }
+};
+
+export const deleteUploadedVideoFile = async (videoUrl?: string): Promise<void> => {
+  if (!videoUrl || !videoUrl.startsWith('/uploads/videos/')) return;
+  const filename = videoUrl.split('/').pop();
+  if (!filename) return;
+  try {
+    await fetch(`/api/uploads/video/${encodeURIComponent(filename)}`, {
+      method: 'DELETE'
+    });
+  } catch {
+    // Best-effort cleanup
   }
 };
 
@@ -670,4 +772,184 @@ export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): P
       reader.readAsDataURL(file);
     }
   });
+};
+
+/* =========================================================================
+   6. XỬ LÝ & TẢI LÊN VIDEO KỶ NIỆM (HỖ TRỢ IPHONE, ANDROID & DESKTOP)
+   ========================================================================= */
+
+export const createFallbackVideoPoster = (label = 'Video Kỷ Niệm'): string => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+    <defs>
+      <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#3D2E28"/>
+        <stop offset="50%" stop-color="#5E4233"/>
+        <stop offset="100%" stop-color="#D98A76"/>
+      </linearGradient>
+    </defs>
+    <rect width="640" height="480" fill="url(#g)"/>
+    <circle cx="320" cy="215" r="46" fill="rgba(255,255,255,0.2)" stroke="#FFFDF9" stroke-width="3"/>
+    <polygon points="308,195 308,235 344,215" fill="#FFFDF9"/>
+    <text x="320" y="305" text-anchor="middle" fill="#FFFDF9" font-family="sans-serif" font-size="22" font-weight="600">${label}</text>
+  </svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+};
+
+/**
+ * Trích xuất ảnh đại diện (poster JPEG nhẹ < 100KB) và thời lượng từ file video
+ */
+export const extractVideoMetadataAndThumbnail = (
+  file: File
+): Promise<{ thumbnail: string; duration: number }> => {
+  return new Promise((resolve) => {
+    const fallback = { thumbnail: createFallbackVideoPoster(), duration: 0 };
+    let objectUrl = '';
+    try {
+      objectUrl = URL.createObjectURL(file);
+    } catch {
+      resolve(fallback);
+      return;
+    }
+
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+    video.src = objectUrl;
+
+    let settled = false;
+    const finish = (result: { thumbnail: string; duration: number }) => {
+      if (settled) return;
+      settled = true;
+      try {
+        URL.revokeObjectURL(objectUrl);
+      } catch {}
+      resolve(result);
+    };
+
+    const timeout = window.setTimeout(() => {
+      finish({
+        thumbnail: createFallbackVideoPoster(),
+        duration: Number.isFinite(video.duration) ? Math.round(video.duration) : 0
+      });
+    }, 6000);
+
+    const captureFrame = () => {
+      window.clearTimeout(timeout);
+      const duration = Number.isFinite(video.duration) ? Math.round(video.duration) : 0;
+      try {
+        const vw = video.videoWidth || 640;
+        const vh = video.videoHeight || 480;
+        const maxDim = 720;
+        let width = vw;
+        let height = vh;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, width, height);
+          const thumb = canvas.toDataURL('image/jpeg', 0.72);
+          if (thumb && thumb.length > 500) {
+            finish({ thumbnail: thumb, duration });
+            return;
+          }
+        }
+      } catch {}
+      finish({ thumbnail: createFallbackVideoPoster(), duration });
+    };
+
+    video.onloadedmetadata = () => {
+      const targetTime = video.duration && video.duration > 1 ? Math.min(1, video.duration / 3) : 0.1;
+      try {
+        video.currentTime = targetTime;
+      } catch {
+        captureFrame();
+      }
+    };
+
+    video.onseeked = captureFrame;
+    video.onloadeddata = () => {
+      if (video.currentTime === 0) {
+        captureFrame();
+      }
+    };
+    video.onerror = () => {
+      window.clearTimeout(timeout);
+      finish(fallback);
+    };
+  });
+};
+
+/**
+ * Tải file video lên máy chủ ứng dụng (/api/uploads/video) kèm theo dõi tiến độ %
+ */
+export const uploadVideoFile = (
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<{ videoUrl: string; size: number }> => {
+  return new Promise((resolve, reject) => {
+    const maxBytes = 80 * 1024 * 1024; // 80MB
+    if (file.size > maxBytes) {
+      reject(new Error('Video vượt quá giới hạn 80MB. Bạn hãy chọn video ngắn hơn hoặc nén nhẹ lại nhé!'));
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/uploads/video', true);
+    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name || 'video.mp4'));
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        const pct = Math.min(99, Math.round((event.loaded / event.total) * 100));
+        onProgress(pct);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (data && data.success && data.videoUrl) {
+            if (onProgress) onProgress(100);
+            resolve({ videoUrl: data.videoUrl, size: data.size || file.size });
+            return;
+          }
+          reject(new Error(data?.message || 'Máy chủ không trả về đường dẫn video.'));
+        } catch {
+          reject(new Error('Phản hồi từ máy chủ không hợp lệ khi tải video.'));
+        }
+      } else {
+        try {
+          const errData = JSON.parse(xhr.responseText);
+          reject(new Error(errData?.message || `Lỗi tải video (HTTP ${xhr.status})`));
+        } catch {
+          reject(new Error(`Không thể tải video lên máy chủ (HTTP ${xhr.status}).`));
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error('Lỗi kết nối mạng khi tải video lên. Vui lòng thử lại nhé!'));
+    };
+
+    xhr.send(file);
+  });
+};
+
+export const formatVideoDuration = (seconds?: number): string => {
+  if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return 'Video';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 };

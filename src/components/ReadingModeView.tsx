@@ -282,13 +282,24 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
 
             {/* Layout nội dung: Ảnh kỷ niệm & Dòng nhật ký lớn */}
             <div className="flex flex-col md:flex-row items-center gap-6 sm:gap-10">
-              {/* Ảnh kỷ niệm phong cách polaroid phóng khoáng */}
+              {/* Ảnh hoặc Video kỷ niệm phong cách polaroid phóng khoáng */}
               <div className="w-full md:w-1/2 aspect-4/3 rounded-2xl overflow-hidden bg-black/5 shadow-md shrink-0">
-                <img
-                  src={currentMemory.imageUrl}
-                  alt={currentMemory.caption}
-                  className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
-                />
+                {currentMemory.mediaType === 'video' && currentMemory.videoUrl ? (
+                  <video
+                    key={currentMemory.id}
+                    src={currentMemory.videoUrl}
+                    poster={currentMemory.imageUrl}
+                    controls
+                    playsInline
+                    className="w-full h-full object-contain bg-black"
+                  />
+                ) : (
+                  <img
+                    src={currentMemory.imageUrl}
+                    alt={currentMemory.caption}
+                    className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
+                  />
+                )}
               </div>
 
               {/* Dòng nhật ký cảm xúc */}
@@ -378,14 +389,24 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
                 )}
               </div>
 
-              {/* Large Image */}
+              {/* Large Image or Video */}
               <div className="aspect-16/10 rounded-2xl overflow-hidden mb-6 shadow-md bg-black/5">
-                <img
-                  src={mem.imageUrl}
-                  alt={mem.caption}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
+                {mem.mediaType === 'video' && mem.videoUrl ? (
+                  <video
+                    src={mem.videoUrl}
+                    poster={mem.imageUrl}
+                    controls
+                    playsInline
+                    className="w-full h-full object-contain bg-black"
+                  />
+                ) : (
+                  <img
+                    src={mem.imageUrl}
+                    alt={mem.caption}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                )}
               </div>
 
               {/* Heartfelt Note */}

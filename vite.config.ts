@@ -10,7 +10,7 @@ export default defineConfig(() => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: 'prompt',
+        registerType: 'autoUpdate',
         includeAssets: ['app-logo.png', 'apple-touch-icon.png', 'favicon-32x32.png', 'icon.svg', 'robots.txt', 'sitemap.xml'],
         manifest: {
           id: '/',
@@ -45,7 +45,13 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          globIgnores: ['**/uploads/**', '**/music/**'],
+          navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//, /^\/music\//],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

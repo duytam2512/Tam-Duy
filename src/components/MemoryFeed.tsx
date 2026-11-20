@@ -14,9 +14,12 @@ import {
   Sparkles,
   ChevronDown,
   Layers,
-  Type
+  Type,
+  Video,
+  Play
 } from 'lucide-react';
 import { Memory, ViewMode, POPULAR_TAGS, CoupleInfo } from '../types';
+import { formatVideoDuration } from '../services/storage';
 
 interface MemoryFeedProps {
   memories: Memory[];
@@ -45,7 +48,13 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState('Tất cả');
   const [selectedYear, setSelectedYear] = useState('all');
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'video'>('all');
   const [memoryToDelete, setMemoryToDelete] = useState<Memory | null>(null);
+
+  const videoCount = useMemo(
+    () => memories.filter((m) => m.mediaType === 'video' && Boolean(m.videoUrl)).length,
+    [memories]
+  );
 
   // Lấy danh sách các năm có kỷ niệm
   const availableYears = useMemo(() => {
@@ -61,6 +70,10 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
   // Bộ lọc tìm kiếm
   const filteredMemories = useMemo(() => {
     return memories.filter((m) => {
+      // 0. Video filter
+      if (mediaFilter === 'video' && !(m.mediaType === 'video' && m.videoUrl)) {
+        return false;
+      }
       // 1. Tag
       if (selectedTag !== 'Tất cả' && m.tag !== selectedTag) {
         return false;
@@ -81,7 +94,7 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
       }
       return true;
     });
-  }, [memories, selectedTag, selectedYear, searchQuery]);
+  }, [memories, mediaFilter, selectedTag, selectedYear, searchQuery]);
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pb-20">
@@ -183,7 +196,7 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
             <button
               key={tag}
               onClick={() => setSelectedTag(tag)}
-              className={`text-xs px-3 py-1 rounded-full whitespace-nowrap transition-all ${
+              className={`text-xs px-3 py-1 rounded-full whitespace-nowrap transition-all cursor-pointer ${
                 selectedTag === tag
                   ? 'bg-[#E8A598] text-white font-semibold shadow-xs'
                   : 'bg-white hover:bg-[#F9F6F0] text-[#8C6D58] border border-[#8C6D58]/15'
@@ -192,6 +205,20 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
               {tag}
             </button>
           ))}
+          {videoCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setMediaFilter((prev) => (prev === 'video' ? 'all' : 'video'))}
+              className={`text-xs px-3 py-1 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer ml-1 ${
+                mediaFilter === 'video'
+                  ? 'bg-[#3D2E28] text-white font-semibold shadow-xs'
+                  : 'bg-white hover:bg-[#F9F6F0] text-[#D98A76] border border-[#D98A76]/40 font-semibold'
+              }`}
+            >
+              <Video className="w-3 h-3" />
+              <span>Video ({videoCount})</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -241,18 +268,31 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                     <span>{item.tag || 'Kỷ niệm'}</span>
                   </div>
 
-                  {/* Multi-photo badge */}
-                  {item.images && item.images.length > 1 && (
+                  {/* Video badge OR Multi-photo badge */}
+                  {item.mediaType === 'video' && item.videoUrl ? (
+                    <div className="absolute top-2.5 right-2.5 px-2.5 py-1 bg-black/70 backdrop-blur-xs text-white text-[11px] font-bold rounded-full shadow-xs flex items-center gap-1">
+                      <Video className="w-3 h-3 text-[#E8A598]" />
+                      <span>{formatVideoDuration(item.videoDuration)}</span>
+                    </div>
+                  ) : item.images && item.images.length > 1 ? (
                     <div className="absolute top-2.5 right-2.5 px-2.5 py-1 bg-black/65 backdrop-blur-xs text-white text-[11px] font-bold rounded-full shadow-xs flex items-center gap-1">
                       <Layers className="w-3 h-3 text-[#E8A598]" />
                       <span>{item.images.length} ảnh</span>
                     </div>
-                  )}
+                  ) : null}
 
-                  {/* Hover hint */}
-                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-medium">
-                    Bấm để phóng to ảnh
-                  </div>
+                  {/* Centered Play Button for Videos */}
+                  {item.mediaType === 'video' && item.videoUrl ? (
+                    <div className="absolute inset-0 bg-black/25 group-hover:bg-black/35 transition-colors flex items-center justify-center">
+                      <div className="w-13 h-13 rounded-full bg-white/90 text-[#D98A76] flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
+                        <Play className="w-6 h-6 fill-[#D98A76] ml-0.5" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-medium">
+                      Bấm để phóng to ảnh
+                    </div>
+                  )}
                 </div>
 
                 {/* Details */}
@@ -356,12 +396,24 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                       alt={item.caption}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    {item.images && item.images.length > 1 && (
+                    {item.mediaType === 'video' && item.videoUrl ? (
+                      <>
+                        <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/70 backdrop-blur-xs text-white text-[10px] font-bold rounded-full shadow-xs flex items-center gap-1">
+                          <Video className="w-2.5 h-2.5 text-[#E8A598]" />
+                          <span>{formatVideoDuration(item.videoDuration)}</span>
+                        </div>
+                        <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-full bg-white/90 text-[#D98A76] flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                            <Play className="w-5 h-5 fill-[#D98A76] ml-0.5" />
+                          </div>
+                        </div>
+                      </>
+                    ) : item.images && item.images.length > 1 ? (
                       <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 backdrop-blur-xs text-white text-[10px] font-bold rounded-full shadow-xs flex items-center gap-1">
                         <Layers className="w-2.5 h-2.5 text-[#E8A598]" />
                         <span>{item.images.length} ảnh</span>
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Info */}
