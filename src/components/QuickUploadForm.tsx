@@ -33,7 +33,8 @@ import {
   extractVideoMetadataAndThumbnail,
   uploadVideoFile,
   createFallbackVideoPoster,
-  formatVideoDuration
+  formatVideoDuration,
+  getVideoEmbedInfo
 } from '../services/storage';
 import { generateSmartCaptions, extractContextualEmojis, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
 
@@ -229,8 +230,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   // Xử lý chọn file video từ máy tính / iPhone / Android
   const processSelectedVideoFile = async (file: File) => {
     setValidationError(null);
-    if (file.size > 80 * 1024 * 1024) {
-      setValidationError('Video vượt quá 80MB. Bạn hãy chọn video ngắn hơn (tối đa 80MB) nhé!');
+    if (file.size > 100 * 1024 * 1024) {
+      setValidationError('Video vượt quá 100MB. Bạn hãy chọn video ngắn hơn (tối đa 100MB) nhé!');
       return;
     }
 
@@ -404,12 +405,23 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             setVideoUploadProgress(pct);
           });
           finalVideoUrl = uploaded.videoUrl;
+        } else if (finalVideoUrl) {
+          if (!/^https?:\/\//i.test(finalVideoUrl) && !finalVideoUrl.startsWith('/')) {
+            finalVideoUrl = `https://${finalVideoUrl}`;
+          }
+          const embedInfo = getVideoEmbedInfo(finalVideoUrl);
+          if (embedInfo.poster && (!videoPosterUrl || videoPosterUrl.startsWith('data:image/svg'))) {
+            finalPoster = embedInfo.poster;
+          }
         }
+
+        const safeDuration =
+          Number.isFinite(videoDuration) && videoDuration > 0 ? Math.round(videoDuration) : undefined;
 
         await onAddMemory({
           mediaType: 'video',
           videoUrl: finalVideoUrl,
-          videoDuration: videoDuration || undefined,
+          videoDuration: safeDuration,
           imageUrl: finalPoster,
           date: memoryDate,
           location: memoryLocation,
@@ -543,7 +555,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-[#8C6D58] flex items-center gap-1.5">
                   <Film className="w-3.5 h-3.5 text-[#D98A76]" />
-                  <span>Video kỷ niệm (MP4 / MOV / WebM - tối đa 80MB)</span>
+                  <span>Video kỷ niệm (MP4 / MOV / WebM - tối đa 100MB)</span>
                   <span className="text-[#D98A76]">*</span>
                 </label>
                 {selectedVideoFile && (
@@ -558,34 +570,55 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
               </div>
 
               {videoPreviewUrl || videoLinkInput.trim() ? (
-                <div className="relative rounded-2xl overflow-hidden border-2 border-[#E8A598]/40 bg-black shadow-sm">
-                  <video
-                    src={videoPreviewUrl || videoLinkInput.trim()}
-                    poster={videoPosterUrl || undefined}
-                    controls
-                    playsInline
-                    className="w-full max-h-64 object-contain bg-black"
-                  />
-                  <div className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-black/65 text-white text-[11px] font-semibold rounded-full backdrop-blur-xs flex items-center gap-1.5">
-                    <Video className="w-3 h-3 text-[#E8A598]" />
-                    <span>
-                      {selectedVideoFile
-                        ? `${selectedVideoFile.name.slice(0, 24)}${selectedVideoFile.name.length > 24 ? '...' : ''} (${(selectedVideoFile.size / (1024 * 1024)).toFixed(1)} MB)`
-                        : 'Video từ đường dẫn'}
-                    </span>
-                    {videoDuration > 0 && (
-                      <span className="text-[#E8A598]">• {formatVideoDuration(videoDuration)}</span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleClearVideo}
-                    className="absolute top-2.5 right-2.5 p-1.5 bg-rose-600/85 hover:bg-rose-700 text-white rounded-full shadow-md cursor-pointer"
-                    title="Xóa video đã chọn"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                (() => {
+                  const linkPreview = !videoPreviewUrl && videoLinkInput.trim()
+                    ? getVideoEmbedInfo(
+                        /^https?:\/\//i.test(videoLinkInput.trim())
+                          ? videoLinkInput.trim()
+                          : `https://${videoLinkInput.trim()}`
+                      )
+                    : null;
+                  return (
+                    <div className="relative rounded-2xl overflow-hidden border-2 border-[#E8A598]/40 bg-black shadow-sm">
+                      {linkPreview && linkPreview.kind === 'iframe' ? (
+                        <iframe
+                          src={linkPreview.src}
+                          title="Xem trước video"
+                          className="w-full h-56 sm:h-64 bg-black"
+                          allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <video
+                          src={videoPreviewUrl || linkPreview?.src || videoLinkInput.trim()}
+                          poster={videoPosterUrl || undefined}
+                          controls
+                          playsInline
+                          className="w-full max-h-64 object-contain bg-black"
+                        />
+                      )}
+                      <div className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-black/65 text-white text-[11px] font-semibold rounded-full backdrop-blur-xs flex items-center gap-1.5">
+                        <Video className="w-3 h-3 text-[#E8A598]" />
+                        <span>
+                          {selectedVideoFile
+                            ? `${selectedVideoFile.name.slice(0, 24)}${selectedVideoFile.name.length > 24 ? '...' : ''} (${(selectedVideoFile.size / (1024 * 1024)).toFixed(1)} MB)`
+                            : 'Video từ đường dẫn'}
+                        </span>
+                        {videoDuration > 0 && (
+                          <span className="text-[#E8A598]">• {formatVideoDuration(videoDuration)}</span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearVideo}
+                        className="absolute top-2.5 right-2.5 p-1.5 bg-rose-600/85 hover:bg-rose-700 text-white rounded-full shadow-md cursor-pointer"
+                        title="Xóa video đã chọn"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })()
               ) : (
                 <label
                   htmlFor="memory-video-upload-input"
@@ -605,7 +638,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                     Chạm để chọn video từ iPhone / Android / Máy tính
                   </p>
                   <p className="text-[11px] text-[#8C6D58] mt-1">
-                    Hỗ trợ MP4, MOV (iPhone), WebM • Tối đa 80MB • Tự động tạo ảnh bìa sắc nét
+                    Hỗ trợ MP4, MOV (iPhone), WebM • Tối đa 100MB • Tải chia mảnh ổn định trên 4G/Wi-Fi
                   </p>
                   {isProcessingVideo && (
                     <div className="mt-2 text-xs text-[#D98A76] font-medium flex items-center justify-center gap-1.5 animate-pulse">
@@ -629,7 +662,11 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
               {isSubmitting && videoUploadProgress > 0 && (
                 <div className="bg-[#FAF7F2] p-3 rounded-xl border border-[#E8A598]/40 space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-semibold text-[#3D2E28]">
-                    <span>Đang tải video lên máy chủ...</span>
+                    <span>
+                      {videoUploadProgress >= 96
+                        ? 'Đang hoàn tất lưu video kỷ niệm...'
+                        : 'Đang tải video lên máy chủ (chia mảnh ổn định)...'}
+                    </span>
                     <span className="text-[#D98A76]">{videoUploadProgress}%</span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-[#E8A598]/20 overflow-hidden">
@@ -641,20 +678,28 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 </div>
               )}
 
-              {/* Tùy chọn dán link video trực tiếp (.mp4/.webm) */}
+              {/* Tùy chọn dán link video (YouTube, Google Drive, Dropbox, .mp4/.webm) */}
               {!selectedVideoFile && (
                 <div className="relative">
                   <Link2 className="w-3.5 h-3.5 text-[#8C6D58] absolute left-3 top-2.5 pointer-events-none" />
                   <input
-                    type="url"
+                    type="text"
                     value={videoLinkInput}
                     onChange={(e) => {
-                      setVideoLinkInput(e.target.value);
-                      if (e.target.value.trim() && !videoPosterUrl) {
-                        setVideoPosterUrl(createFallbackVideoPoster('Video Kỷ Niệm'));
+                      const val = e.target.value;
+                      setVideoLinkInput(val);
+                      if (val.trim()) {
+                        const info = getVideoEmbedInfo(
+                          /^https?:\/\//i.test(val.trim()) ? val.trim() : `https://${val.trim()}`
+                        );
+                        if (info.poster) {
+                          setVideoPosterUrl(info.poster);
+                        } else if (!videoPosterUrl) {
+                          setVideoPosterUrl(createFallbackVideoPoster('Video Kỷ Niệm'));
+                        }
                       }
                     }}
-                    placeholder="Hoặc dán đường dẫn video trực tiếp (.mp4 / .webm)..."
+                    placeholder="Hoặc dán link video (YouTube, Google Drive, Dropbox, .mp4)..."
                     className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
                   />
                 </div>

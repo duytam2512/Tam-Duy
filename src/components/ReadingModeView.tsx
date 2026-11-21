@@ -19,6 +19,7 @@ import {
   Layers
 } from 'lucide-react';
 import { Memory, CoupleInfo, CaptionFont } from '../types';
+import { getVideoEmbedInfo } from '../services/storage';
 import { BrandLogo } from './BrandLogo';
 
 interface ReadingModeViewProps {
@@ -285,14 +286,29 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
               {/* Ảnh hoặc Video kỷ niệm phong cách polaroid phóng khoáng */}
               <div className="w-full md:w-1/2 aspect-4/3 rounded-2xl overflow-hidden bg-black/5 shadow-md shrink-0">
                 {currentMemory.mediaType === 'video' && currentMemory.videoUrl ? (
-                  <video
-                    key={currentMemory.id}
-                    src={currentMemory.videoUrl}
-                    poster={currentMemory.imageUrl}
-                    controls
-                    playsInline
-                    className="w-full h-full object-contain bg-black"
-                  />
+                  (() => {
+                    const info = getVideoEmbedInfo(currentMemory.videoUrl);
+                    return info.kind === 'iframe' ? (
+                      <iframe
+                        key={currentMemory.id}
+                        src={info.src}
+                        title={currentMemory.caption || 'Video kỷ niệm'}
+                        className="w-full h-full bg-black"
+                        allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                        allowFullScreen
+                      />
+                    ) : (
+                      <video
+                        key={currentMemory.id}
+                        src={info.src}
+                        poster={currentMemory.imageUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-contain bg-black"
+                      />
+                    );
+                  })()
                 ) : (
                   <img
                     src={currentMemory.imageUrl}
@@ -392,13 +408,27 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
               {/* Large Image or Video */}
               <div className="aspect-16/10 rounded-2xl overflow-hidden mb-6 shadow-md bg-black/5">
                 {mem.mediaType === 'video' && mem.videoUrl ? (
-                  <video
-                    src={mem.videoUrl}
-                    poster={mem.imageUrl}
-                    controls
-                    playsInline
-                    className="w-full h-full object-contain bg-black"
-                  />
+                  (() => {
+                    const info = getVideoEmbedInfo(mem.videoUrl);
+                    return info.kind === 'iframe' ? (
+                      <iframe
+                        src={info.src}
+                        title={mem.caption || 'Video kỷ niệm'}
+                        className="w-full h-full bg-black"
+                        allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                        allowFullScreen
+                      />
+                    ) : (
+                      <video
+                        src={info.src}
+                        poster={mem.imageUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-contain bg-black"
+                      />
+                    );
+                  })()
                 ) : (
                   <img
                     src={mem.imageUrl}

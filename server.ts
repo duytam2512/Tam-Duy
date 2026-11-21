@@ -4,8 +4,10 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import crypto from "crypto";
 import dotenv from "dotenv";
+import { generateSmartCaptions, type CaptionTone } from "./src/utils/aiCaptionEngine.ts";
 
 dotenv.config();
 
@@ -36,37 +38,244 @@ app.get("/api/app-version", (_req, res) => {
   res.json({ version: APP_VERSION });
 });
 
-// Thư mục lưu nhạc tải về website
-const MUSIC_DIR = path.resolve(process.cwd(), "public", "music");
-if (!fs.existsSync(MUSIC_DIR)) {
-  fs.mkdirSync(MUSIC_DIR, { recursive: true });
+// Đảm bảo thư mục lưu file luôn ghi được kể cả trên container chỉ đọc (fallback sang /tmp)
+function resolveWritableDir(primaryDir: string, fallbackFolderName: string): {
+  primaryDir: string;
+  writableDir: string;
+} {
+  try {
+    if (!fs.existsSync(primaryDir)) {
+      fs.mkdirSync(primaryDir, { recursive: true });
+    }
+    const probe = path.join(primaryDir, `.probe-${process.pid}`);
+    fs.writeFileSync(probe, "ok");
+    fs.unlinkSync(probe);
+    return { primaryDir, writableDir: primaryDir };
+  } catch {
+    const tmpDir = path.join(os.tmpdir(), "goc-nho-media", fallbackFolderName);
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+    return { primaryDir, writableDir: tmpDir };
+  }
 }
-app.use("/music", express.static(MUSIC_DIR));
+
+// Thư mục lưu nhạc tải về website (hỗ trợ HTTP Range cho iPhone/Safari)
+const musicDirs = resolveWritableDir(path.resolve(process.cwd(), "public", "music"), "music");
+const MUSIC_DIR = musicDirs.writableDir;
+const musicStaticOpts = {
+  acceptRanges: true,
+  setHeaders: (res: express.Response) => {
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+  },
+};
+app.use("/music", express.static(MUSIC_DIR, musicStaticOpts));
+if (musicDirs.primaryDir !== MUSIC_DIR && fs.existsSync(musicDirs.primaryDir)) {
+  app.use("/music", express.static(musicDirs.primaryDir, musicStaticOpts));
+}
 
 // Thư mục lưu video kỷ niệm tải lên (hỗ trợ HTTP Range streaming cho iPhone/Safari/Desktop)
-const VIDEO_DIR = path.resolve(process.cwd(), "public", "uploads", "videos");
-if (!fs.existsSync(VIDEO_DIR)) {
-  fs.mkdirSync(VIDEO_DIR, { recursive: true });
+const videoDirs = resolveWritableDir(path.resolve(process.cwd(), "public", "uploads", "videos"), "videos");
+const VIDEO_DIR = videoDirs.writableDir;
+const VIDEO_TMP_DIR = path.join(os.tmpdir(), "goc-nho-video-chunks");
+if (!fs.existsSync(VIDEO_TMP_DIR)) {
+  fs.mkdirSync(VIDEO_TMP_DIR, { recursive: true });
 }
-app.use(
-  "/uploads/videos",
-  express.static(VIDEO_DIR, {
-    acceptRanges: true,
-    setHeaders: (res) => {
-      res.setHeader("Accept-Ranges", "bytes");
-      res.setHeader("Cache-Control", "public, max-age=31536000");
-    },
-  })
+
+const videoStaticOpts = {
+  acceptRanges: true,
+  setHeaders: (res: express.Response) => {
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "public, max-age=31536000");
+  },
+};
+app.use("/uploads/videos", express.static(VIDEO_DIR, videoStaticOpts));
+if (videoDirs.primaryDir !== VIDEO_DIR && fs.existsSync(videoDirs.primaryDir)) {
+  app.use("/uploads/videos", express.static(videoDirs.primaryDir, videoStaticOpts));
+}
+
+function detectVideoExt(rawName: string, contentType: string): string {
+  const extMatch = rawName.toLowerCase().match(/\.(mp4|mov|webm|m4v|ogg|3gp)$/);
+  if (extMatch) return extMatch[1];
+  const ct = contentType.toLowerCase();
+  if (ct.includes("webm")) return "webm";
+  if (ct.includes("quicktime")) return "mov";
+  if (ct.includes("x-m4v")) return "m4v";
+  return "mp4";
+}
+
+// Lưu trạng thái các phiên upload video chia mảnh (chunked upload vượt giới hạn 32MB Cloud Run)
+const pendingVideoUploads = new Map<
+  string,
+  { tempPath: string; filename: string; mimeType: string; totalSize: number; createdAt: number }
+>();
+
+/**
+ * API: POST /api/uploads/video/init
+ * Khởi tạo phiên tải video theo từng mảnh nhỏ (2MB/mảnh) giúp iPhone/4G/Cloud Run không bị lỗi 413 hay rớt mạng
+ */
+app.post("/api/uploads/video/init", express.json({ limit: "1mb" }), (req, res) => {
+  try {
+    const rawName = String(req.body?.filename || "video.mp4");
+    const mimeType = String(req.body?.mimeType || "video/mp4");
+    const totalSize = Number(req.body?.totalSize || 0);
+
+    if (totalSize > 100 * 1024 * 1024) {
+      return res.status(413).json({
+        success: false,
+        message: "Video vượt quá giới hạn 100MB. Bạn hãy chọn video ngắn hơn nhé!",
+      });
+    }
+
+    const ext = detectVideoExt(rawName, mimeType);
+    const uploadId = `up-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+    const filename = `vid-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
+    const tempPath = path.join(VIDEO_TMP_DIR, `${uploadId}.part`);
+    fs.writeFileSync(tempPath, Buffer.alloc(0));
+
+    pendingVideoUploads.set(uploadId, {
+      tempPath,
+      filename,
+      mimeType,
+      totalSize,
+      createdAt: Date.now(),
+    });
+
+    // Dọn dẹp các phiên upload bỏ dở quá 30 phút
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    for (const [id, meta] of pendingVideoUploads.entries()) {
+      if (meta.createdAt < cutoff) {
+        try {
+          if (fs.existsSync(meta.tempPath)) fs.unlinkSync(meta.tempPath);
+        } catch {}
+        pendingVideoUploads.delete(id);
+      }
+    }
+
+    return res.json({ success: true, uploadId, filename });
+  } catch (err: any) {
+    console.error("Lỗi init upload video:", err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Không thể khởi tạo phiên tải video",
+    });
+  }
+});
+
+/**
+ * API: POST /api/uploads/video/chunk
+ * Nhận từng mảnh video nhị phân (tối đa 4MB/mảnh) với ghi theo offset an toàn khi thử lại
+ */
+app.post(
+  "/api/uploads/video/chunk",
+  express.raw({ type: () => true, limit: "4mb" }),
+  (req, res) => {
+    try {
+      const uploadId = String(req.query.uploadId || req.headers["x-upload-id"] || "");
+      const offset = Number(req.query.offset ?? req.headers["x-chunk-offset"] ?? -1);
+      const session = pendingVideoUploads.get(uploadId);
+
+      if (!session || !fs.existsSync(session.tempPath)) {
+        return res.status(404).json({
+          success: false,
+          message: "Phiên tải video đã hết hạn, vui lòng thử tải lại nhé!",
+        });
+      }
+
+      const chunk = req.body as Buffer;
+      if (!chunk || !Buffer.isBuffer(chunk) || chunk.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Mảnh dữ liệu video trống",
+        });
+      }
+
+      if (Number.isFinite(offset) && offset >= 0) {
+        const fd = fs.openSync(session.tempPath, "r+");
+        try {
+          fs.writeSync(fd, chunk, 0, chunk.length, offset);
+        } finally {
+          fs.closeSync(fd);
+        }
+      } else {
+        fs.appendFileSync(session.tempPath, chunk);
+      }
+
+      return res.json({ success: true, received: chunk.length });
+    } catch (err: any) {
+      console.error("Lỗi ghi chunk video:", err);
+      return res.status(500).json({
+        success: false,
+        message: err?.message || "Không thể lưu mảnh dữ liệu video",
+      });
+    }
+  }
 );
 
 /**
+ * API: POST /api/uploads/video/complete
+ * Hoàn tất ghép file video và trả về đường dẫn phát /uploads/videos/...
+ */
+app.post("/api/uploads/video/complete", express.json({ limit: "1mb" }), (req, res) => {
+  try {
+    const uploadId = String(req.body?.uploadId || "");
+    const session = pendingVideoUploads.get(uploadId);
+
+    if (!session || !fs.existsSync(session.tempPath)) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy phiên tải video để hoàn tất",
+      });
+    }
+
+    const finalPath = path.join(VIDEO_DIR, session.filename);
+    try {
+      fs.renameSync(session.tempPath, finalPath);
+    } catch {
+      // Cross-device rename fallback (/tmp -> app dir)
+      fs.copyFileSync(session.tempPath, finalPath);
+      try {
+        fs.unlinkSync(session.tempPath);
+      } catch {}
+    }
+
+    const stat = fs.statSync(finalPath);
+    pendingVideoUploads.delete(uploadId);
+
+    if (stat.size === 0) {
+      try {
+        fs.unlinkSync(finalPath);
+      } catch {}
+      return res.status(400).json({
+        success: false,
+        message: "File video tải lên bị rỗng. Vui lòng chọn lại video nhé!",
+      });
+    }
+
+    return res.json({
+      success: true,
+      videoUrl: `/uploads/videos/${session.filename}`,
+      filename: session.filename,
+      size: stat.size,
+      mimeType: session.mimeType,
+    });
+  } catch (err: any) {
+    console.error("Lỗi complete upload video:", err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Không thể hoàn tất lưu video",
+    });
+  }
+});
+
+/**
  * API: POST /api/uploads/video
- * Nhận file video binary trực tiếp (tối đa 80MB), lưu vào public/uploads/videos
- * để đảm bảo đồng bộ trên mọi thiết bị mà không vượt giới hạn 1MB của Firestore
+ * Tải trực tiếp file video nhỏ (< 28MB) - giữ tương thích ngược & chấp nhận mọi MIME từ iPhone/Android
  */
 app.post(
   "/api/uploads/video",
-  express.raw({ type: ["video/*", "application/octet-stream"], limit: "80mb" }),
+  express.raw({ type: () => true, limit: "30mb" }),
   (req, res) => {
     try {
       const buffer = req.body as Buffer;
@@ -77,15 +286,14 @@ app.post(
         });
       }
 
-      const contentType = (req.headers["content-type"] || "video/mp4").toLowerCase();
-      const rawName = decodeURIComponent(String(req.headers["x-file-name"] || "video.mp4"));
-      const extMatch = rawName.toLowerCase().match(/\.(mp4|mov|webm|m4v|ogg|3gp)$/);
-      let ext = extMatch ? extMatch[1] : "mp4";
-      if (!extMatch) {
-        if (contentType.includes("webm")) ext = "webm";
-        else if (contentType.includes("quicktime")) ext = "mov";
-        else if (contentType.includes("x-m4v")) ext = "m4v";
+      const contentType = String(req.headers["content-type"] || "video/mp4").toLowerCase();
+      let rawName = "video.mp4";
+      try {
+        rawName = decodeURIComponent(String(req.headers["x-file-name"] || "video.mp4"));
+      } catch {
+        rawName = String(req.headers["x-file-name"] || "video.mp4");
       }
+      const ext = detectVideoExt(rawName, contentType);
 
       const uniqueName = `vid-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
       const filePath = path.join(VIDEO_DIR, uniqueName);
@@ -118,9 +326,16 @@ app.delete("/api/uploads/video/:filename", (req, res) => {
     if (!filename || !/^[a-zA-Z0-9._-]+$/.test(filename)) {
       return res.status(400).json({ success: false, message: "Tên file không hợp lệ" });
     }
-    const filePath = path.join(VIDEO_DIR, filename);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    const candidates = [
+      path.join(VIDEO_DIR, filename),
+      path.join(videoDirs.primaryDir, filename),
+    ];
+    for (const filePath of candidates) {
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch {}
+      }
     }
     return res.json({ success: true });
   } catch (err) {
@@ -135,7 +350,7 @@ app.delete("/api/uploads/video/:filename", (req, res) => {
  */
 app.post(
   "/api/music/upload",
-  express.raw({ type: ["audio/*", "application/octet-stream"], limit: "25mb" }),
+  express.raw({ type: () => true, limit: "25mb" }),
   (req, res) => {
     try {
       const buffer = req.body as Buffer;
@@ -146,8 +361,13 @@ app.post(
         });
       }
 
-      const contentType = (req.headers["content-type"] || "audio/mpeg").toLowerCase();
-      const rawName = decodeURIComponent(String(req.headers["x-file-name"] || "song.mp3"));
+      const contentType = String(req.headers["content-type"] || "audio/mpeg").toLowerCase();
+      let rawName = "song.mp3";
+      try {
+        rawName = decodeURIComponent(String(req.headers["x-file-name"] || "song.mp3"));
+      } catch {
+        rawName = String(req.headers["x-file-name"] || "song.mp3");
+      }
       const extMatch = rawName.toLowerCase().match(/\.(mp3|m4a|wav|aac|ogg|flac)$/);
       let ext = extMatch ? extMatch[1] : "mp3";
       if (!extMatch) {
@@ -182,21 +402,41 @@ app.post(
   }
 );
 
+function normalizeExternalAudioUrl(inputUrl: string): string {
+  const trimmed = inputUrl.trim();
+  // Google Drive: https://drive.google.com/file/d/<ID>/view -> direct download
+  const gdFileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (gdFileMatch) {
+    return `https://drive.google.com/uc?export=download&id=${gdFileMatch[1]}`;
+  }
+  const gdOpenMatch = trimmed.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/i);
+  if (gdOpenMatch) {
+    return `https://drive.google.com/uc?export=download&id=${gdOpenMatch[1]}`;
+  }
+  // Dropbox: ?dl=0 -> ?raw=1
+  if (/dropbox\.com/i.test(trimmed)) {
+    return trimmed.replace(/[?&]dl=[01]/i, "").concat(trimmed.includes("?") ? "&raw=1" : "?raw=1");
+  }
+  return trimmed;
+}
+
 /**
  * API: GET /api/audio/proxy
- * Proxy luồng âm thanh hỗ trợ HTTP Range giúp phát ổn định link nhạc ngoài bị chặn CORS/Referer
+ * Proxy luồng âm thanh hỗ trợ HTTP Range giúp phát ổn định link nhạc ngoài bị chặn CORS/Referer/Google Drive/Dropbox
  */
 app.get("/api/audio/proxy", async (req, res) => {
   try {
-    const targetUrl = String(req.query.url || "").trim();
-    if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+    const rawTarget = String(req.query.url || "").trim();
+    if (!rawTarget || !/^https?:\/\//i.test(rawTarget)) {
       return res.status(400).send("URL âm thanh không hợp lệ");
     }
 
+    const targetUrl = normalizeExternalAudioUrl(rawTarget);
     const range = req.headers.range;
     const upstream = await fetch(targetUrl, {
+      redirect: "follow",
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
         ...(range ? { Range: range } : {}),
       },
     });
@@ -205,13 +445,22 @@ app.get("/api/audio/proxy", async (req, res) => {
       return res.status(upstream.status).send("Không thể tải nguồn âm thanh");
     }
 
+    const ct = (upstream.headers.get("content-type") || "").toLowerCase();
+    if (ct.includes("text/html")) {
+      return res.status(415).send("Đường dẫn này là trang web HTML chứ không phải file nhạc trực tiếp");
+    }
+
     res.status(upstream.status);
     for (const [key, val] of upstream.headers.entries()) {
       if (["content-type", "content-length", "content-range", "accept-ranges"].includes(key.toLowerCase())) {
         res.setHeader(key, val);
       }
     }
+    if (!ct || ct === "application/octet-stream") {
+      res.setHeader("Content-Type", "audio/mpeg");
+    }
     res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Access-Control-Allow-Origin", "*");
 
     if (upstream.body) {
       const reader = upstream.body.getReader();
@@ -249,8 +498,6 @@ const ai = new GoogleGenAI({
     },
   },
 });
-
-import { generateSmartCaptions, CaptionTone } from "./src/utils/aiCaptionEngine";
 
 /**
  * API: /api/generate-caption
@@ -781,6 +1028,276 @@ app.post("/api/youtube/resolve", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error?.message || "Không thể phân tích link YouTube lúc này"
+    });
+  }
+});
+
+/**
+ * Helper tải 1 bài Zing MP3 theo ID hoặc tên bài hát -> lưu MP3 cục bộ tại /music/<id>.mp3
+ * Giúp phát 100% mượt mà trên iPhone Safari & Android không lo bị YouTube chặn!
+ */
+async function tryResolveZingToLocalMp3(input: string) {
+  const trimmed = input.trim();
+  let songId: string | null = null;
+
+  if (/^[A-Za-z0-9]{8,14}$/.test(trimmed)) {
+    songId = trimmed;
+  } else if (/zingmp3\.vn/i.test(trimmed)) {
+    const match = trimmed.match(/\/([A-Za-z0-9]{8,14})(?:\.html|\/|$|\?)/) || trimmed.match(/([A-Za-z0-9]{8,14})\.html/);
+    if (match) songId = match[1];
+  }
+
+  let fallbackTitleFromSearch = "";
+  if (!songId) {
+    const songs = await searchZingSong(trimmed);
+    if (!songs || songs.length === 0) return null;
+    // Ưu tiên chọn bài không phải VIP (streamingStatus === 1)
+    const freeSong = songs.find((s: any) => s.streamingStatus === 1) || songs[0];
+    songId = freeSong.encodeId;
+    fallbackTitleFromSearch = `${freeSong.title || ""} ${freeSong.artistsNames || ""}`.trim();
+  }
+
+  if (!songId) return null;
+
+  const details = await getZingSongDetails(songId);
+  const title = details.info?.title || fallbackTitleFromSearch || "Bài hát của hai đứa";
+  const artist = details.info?.artistsNames || "Zing MP3";
+  const thumbnail = details.info?.thumbnailM || details.info?.thumbnail || "";
+  const duration = details.info?.duration || 0;
+  const audioCdnUrl = details.stream?.["128"];
+
+  if (!audioCdnUrl || audioCdnUrl === "VIP") {
+    return { isVip: true, title, artist, thumbnail };
+  }
+
+  const localFileName = `${songId}.mp3`;
+  const localFilePath = path.join(MUSIC_DIR, localFileName);
+  const primaryFilePath = path.join(musicDirs.primaryDir, localFileName);
+  let finalAudioUrl = `/api/zingmp3/stream?id=${songId}`;
+
+  if (fs.existsSync(localFilePath) || fs.existsSync(primaryFilePath)) {
+    finalAudioUrl = `/music/${localFileName}`;
+  } else {
+    try {
+      const audioFetch = await fetch(audioCdnUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Referer": "https://zingmp3.vn/",
+        },
+      });
+      if (audioFetch.ok) {
+        const buffer = Buffer.from(await audioFetch.arrayBuffer());
+        if (buffer.length > 10000) {
+          fs.writeFileSync(localFilePath, buffer);
+          finalAudioUrl = `/music/${localFileName}`;
+        }
+      }
+    } catch {
+      finalAudioUrl = `/api/zingmp3/stream?id=${songId}`;
+    }
+  }
+
+  return {
+    isVip: false,
+    song: {
+      id: `zing-${songId}`,
+      title,
+      artist,
+      mood: "Nhạc MP3",
+      url: finalAudioUrl,
+      thumbnail,
+      duration,
+      isZing: true,
+    },
+  };
+}
+
+/**
+ * API: POST /api/music/resolve-link
+ * Nhận MỌI loại link nhạc hoặc tên bài hát (YouTube, Zing MP3, link MP3/M4A/WAV, Google Drive, Dropbox, hoặc tên bài)
+ * Tự động chuẩn hóa để phát được trên cả iPhone Safari, Android và máy tính!
+ */
+app.post("/api/music/resolve-link", async (req, res) => {
+  try {
+    const rawInput = String(req.body?.input || req.body?.url || "").trim();
+    const customTitle = String(req.body?.title || "").trim();
+
+    if (!rawInput) {
+      return res.status(400).json({ success: false, message: "Vui lòng nhập link nhạc hoặc tên bài hát nhé!" });
+    }
+
+    // 1. Link Zing MP3
+    if (/zingmp3\.vn/i.test(rawInput)) {
+      const zingRes = await tryResolveZingToLocalMp3(rawInput);
+      if (zingRes && !zingRes.isVip && zingRes.song) {
+        if (customTitle) zingRes.song.title = customTitle;
+        return res.json({ success: true, song: zingRes.song });
+      }
+      // Nếu bài Zing MP3 bị VIP -> tự động tìm tên bài đó trên YouTube
+      const ytSearchQuery = zingRes?.title ? `${zingRes.title} ${zingRes.artist || ""}`.trim() : rawInput;
+      const ytId = await searchYouTubeVideo(ytSearchQuery);
+      if (ytId) {
+        return res.json({
+          success: true,
+          note: "Bài hát trên Zing MP3 là bản VIP nên đã tự chuyển sang bản YouTube tương ứng.",
+          song: {
+            id: `yt-${ytId}`,
+            title: customTitle || zingRes?.title || "Giai điệu từ YouTube",
+            artist: zingRes?.artist || "YouTube",
+            mood: "YouTube Music",
+            url: `https://www.youtube.com/watch?v=${ytId}`,
+            thumbnail: zingRes?.thumbnail || `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+            isYouTube: true,
+            youtubeId: ytId,
+          },
+        });
+      }
+      return res.status(403).json({
+        success: false,
+        message: "Bài hát này trên Zing MP3 thuộc bản quyền VIP. Bạn hãy thử gõ tên bài hoặc tải file MP3 từ máy nhé!",
+      });
+    }
+
+    // 2. Link YouTube (youtube.com / youtu.be / music.youtube / shorts)
+    const ytIdFromLink = extractYouTubeVideoId(rawInput);
+    if (ytIdFromLink && (/youtu\.?be/i.test(rawInput) || /^[a-zA-Z0-9_-]{11}$/.test(rawInput))) {
+      let title = customTitle || "Giai điệu từ YouTube";
+      let artist = "YouTube";
+      let thumbnail = `https://i.ytimg.com/vi/${ytIdFromLink}/hqdefault.jpg`;
+
+      try {
+        const oembedRes = await fetch(
+          `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytIdFromLink}&format=json`
+        );
+        if (oembedRes.ok) {
+          const data = await oembedRes.json();
+          if (!customTitle && data.title) title = data.title;
+          if (data.author_name) artist = data.author_name;
+          if (data.thumbnail_url) thumbnail = data.thumbnail_url;
+        }
+      } catch {}
+
+      // Thử tìm nhanh bản MP3 miễn phí cùng tên trên Zing MP3 nếu là nhạc Việt (chỉ lấy khi tên khớp) để phát mượt trên iPhone?
+      // Trả trực tiếp YouTube đúng video người dùng chọn để không sai bài!
+      return res.json({
+        success: true,
+        song: {
+          id: `yt-${ytIdFromLink}`,
+          title,
+          artist,
+          mood: "YouTube Music",
+          url: `https://www.youtube.com/watch?v=${ytIdFromLink}`,
+          thumbnail,
+          isYouTube: true,
+          youtubeId: ytIdFromLink,
+        },
+      });
+    }
+
+    // 3. Link HTTP/HTTPS khác (MP3/M4A/WAV trực tiếp, Google Drive, Dropbox...)
+    if (/^https?:\/\//i.test(rawInput) || /^(www\.|drive\.google\.com|dropbox\.com)/i.test(rawInput)) {
+      const withProto = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
+      const normalized = normalizeExternalAudioUrl(withProto);
+
+      // Kiểm tra xem đường dẫn có phải file âm thanh thật không (tránh lưu trang HTML như Spotify/SoundCloud/TikTok không phát được trong <audio>)
+      try {
+        const probe = await fetch(normalized, {
+          method: "GET",
+          redirect: "follow",
+          headers: {
+            Range: "bytes=0-512",
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+          },
+        });
+        const ct = (probe.headers.get("content-type") || "").toLowerCase();
+        if (!probe.ok && probe.status !== 206) {
+          return res.status(400).json({
+            success: false,
+            message: `Không mở được đường dẫn nhạc này (mã lỗi ${probe.status}). Bạn hãy thử link YouTube, Zing MP3 hoặc tải file nhạc từ máy nhé!`,
+          });
+        }
+        if (ct.includes("text/html")) {
+          return res.status(415).json({
+            success: false,
+            message:
+              "Đường dẫn này là trang web (không phải file .mp3/.m4a trực tiếp). Bạn hãy dán link YouTube, link Zing MP3 hoặc gõ thẳng TÊN BÀI HÁT để app tự tìm nhạc nhé!",
+          });
+        }
+      } catch {
+        // Nếu server probe lỗi tạm thời, vẫn cho phép đi qua audio proxy
+      }
+
+      const fileNameGuess = decodeURIComponent(
+        withProto.split("?")[0].split("/").pop() || "Giai điệu của hai đứa"
+      )
+        .replace(/\.[^.]+$/, "")
+        .replace(/[_-]+/g, " ")
+        .trim();
+
+      const needsProxy = /drive\.google\.com|dropbox\.com/i.test(withProto);
+
+      return res.json({
+        success: true,
+        song: {
+          id: `custom-${Date.now()}`,
+          title: customTitle || fileNameGuess || "Giai điệu của hai đứa",
+          artist: "Link nhạc trực tiếp",
+          mood: "Yêu thích",
+          url: needsProxy ? `/api/audio/proxy?url=${encodeURIComponent(normalized)}` : normalized,
+        },
+      });
+    }
+
+    // 4. Người dùng gõ TÊN BÀI HÁT -> Ưu tiên tìm & tải MP3 cục bộ từ Zing MP3 (phát 100% mượt trên iPhone!), fallback sang YouTube
+    try {
+      const zingRes = await tryResolveZingToLocalMp3(rawInput);
+      if (zingRes && !zingRes.isVip && zingRes.song) {
+        if (customTitle) zingRes.song.title = customTitle;
+        return res.json({ success: true, song: zingRes.song });
+      }
+    } catch {}
+
+    const ytFoundId = await searchYouTubeVideo(rawInput);
+    if (ytFoundId) {
+      let title = customTitle || rawInput;
+      let artist = "YouTube";
+      let thumbnail = `https://i.ytimg.com/vi/${ytFoundId}/hqdefault.jpg`;
+      try {
+        const oembedRes = await fetch(
+          `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytFoundId}&format=json`
+        );
+        if (oembedRes.ok) {
+          const data = await oembedRes.json();
+          if (!customTitle && data.title) title = data.title;
+          if (data.author_name) artist = data.author_name;
+          if (data.thumbnail_url) thumbnail = data.thumbnail_url;
+        }
+      } catch {}
+
+      return res.json({
+        success: true,
+        song: {
+          id: `yt-${ytFoundId}`,
+          title,
+          artist,
+          mood: "YouTube Music",
+          url: `https://www.youtube.com/watch?v=${ytFoundId}`,
+          thumbnail,
+          isYouTube: true,
+          youtubeId: ytFoundId,
+        },
+      });
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: "Không tìm thấy bài hát phù hợp. Bạn thử nhập tên bài khác hoặc tải file MP3 từ máy nhé!",
+    });
+  } catch (err: any) {
+    console.error("Lỗi resolve-link:", err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Không thể xử lý link nhạc lúc này",
     });
   }
 });

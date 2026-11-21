@@ -513,6 +513,26 @@ export interface MusicTrack {
 
 export const DEFAULT_PLAYLIST: MusicTrack[] = [
   {
+    id: "zing-ZqfoKtrd1H7M",
+    title: "Nàng Thơ",
+    artist: "Hoàng Dũng",
+    mood: "Lãng mạn",
+    url: "/music/ZqfoKtrd1H7M.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/e/6/7/e/e67ea0b93182adbf44c6a019591834df.jpg",
+    duration: 254,
+    isZing: true
+  },
+  {
+    id: "zing-nOSwbgV9mMU",
+    title: "Chỉ Là Không Cùng Nhau (Live)",
+    artist: "Tăng Phúc, Trương Thảo Nhi",
+    mood: "Sâu lắng",
+    url: "/music/nOSwbgV9mMU.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/1/f/1/a/1f1ab8428a983f8a7700bfaa5591713b.jpg",
+    duration: 226,
+    isZing: true
+  },
+  {
     id: "track-1",
     title: "Giai Điệu Acoustic Tình Yêu",
     artist: "Acoustic Romantic",
@@ -539,20 +559,6 @@ export const DEFAULT_PLAYLIST: MusicTrack[] = [
     artist: "Soft Melody",
     mood: "Bình yên",
     url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3"
-  },
-  {
-    id: "track-5",
-    title: "Sáng Sớm Đà Lạt",
-    artist: "Indie Chill",
-    mood: "Tươi mới",
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3"
-  },
-  {
-    id: "track-6",
-    title: "Khu Vườn Bình Yên",
-    artist: "Giai Điệu Gió",
-    mood: "Thư thái",
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3"
   }
 ];
 

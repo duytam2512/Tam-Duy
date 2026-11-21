@@ -15,6 +15,7 @@ import {
   Video
 } from 'lucide-react';
 import { Memory } from '../types';
+import { getVideoEmbedInfo } from '../services/storage';
 
 interface LightboxModalProps {
   memory: Memory;
@@ -169,15 +170,33 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       <div className="relative max-w-4xl w-full max-h-[88vh] flex flex-col items-center justify-center z-10">
         <div className="relative overflow-hidden flex items-center justify-center max-h-[60vh] w-full group">
           {isVideo ? (
-            <video
-              key={memory.id}
-              src={memory.videoUrl}
-              poster={memory.imageUrl}
-              controls
-              autoPlay
-              playsInline
-              className="max-h-[58vh] max-w-full rounded-xl shadow-2xl bg-black"
-            />
+            (() => {
+              const videoInfo = getVideoEmbedInfo(memory.videoUrl);
+              if (videoInfo.kind === 'iframe') {
+                return (
+                  <iframe
+                    key={memory.id}
+                    src={videoInfo.src}
+                    title={memory.caption || 'Video kỷ niệm'}
+                    className="w-full max-w-3xl aspect-video max-h-[58vh] rounded-xl shadow-2xl bg-black"
+                    allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                    allowFullScreen
+                  />
+                );
+              }
+              return (
+                <video
+                  key={memory.id}
+                  src={videoInfo.src}
+                  poster={memory.imageUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="metadata"
+                  className="max-h-[58vh] max-w-full rounded-xl shadow-2xl bg-black"
+                />
+              );
+            })()
           ) : (
             <img
               src={activeImageUrl}

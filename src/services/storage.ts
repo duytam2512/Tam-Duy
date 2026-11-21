@@ -138,11 +138,21 @@ export const getStoredPlaylist = (): MusicTrack[] => {
  * Bất kỳ bài hát nào được thêm trên Cốc Cốc laptop sẽ ngay lập tức xuất hiện
  * trên điện thoại, máy tính bảng và mọi trình duyệt khác khi truy cập web!
  */
+const stripUndefinedFromObject = <T extends Record<string, any>>(obj: T): Record<string, any> =>
+  Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => {
+      if (value === undefined) return false;
+      if (typeof value === 'number' && !Number.isFinite(value)) return false;
+      return true;
+    })
+  );
+
 export const savePlaylistBoth = async (playlist: MusicTrack[]): Promise<void> => {
   const { tracks: cleanTracks } = sanitizePlaylistTracks(playlist);
+  const firestoreSafeTracks = cleanTracks.map((t) => stripUndefinedFromObject(t)) as MusicTrack[];
   // 1. Lưu ngay vào localStorage của thiết bị hiện tại
   try {
-    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(cleanTracks));
+    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(firestoreSafeTracks));
   } catch (err) {
     console.warn('Lỗi lưu playlist vào localStorage:', err);
   }
@@ -151,7 +161,7 @@ export const savePlaylistBoth = async (playlist: MusicTrack[]): Promise<void> =>
   try {
     const playlistDocRef = doc(db, 'shared_data', 'playlist');
     await setDoc(playlistDocRef, {
-      tracks: cleanTracks,
+      tracks: firestoreSafeTracks,
       updatedAt: Date.now()
     });
   } catch (err) {
@@ -333,10 +343,8 @@ export const subscribeToSharedMemories = (
 
 export const saveSharedMemory = async (memory: Memory): Promise<boolean> => {
   try {
-    // Loại bỏ các trường undefined trước khi ghi vào Firestore
-    const cleanMemory = Object.fromEntries(
-      Object.entries(memory).filter(([, value]) => value !== undefined)
-    );
+    // Loại bỏ các trường undefined / NaN trước khi ghi vào Firestore
+    const cleanMemory = stripUndefinedFromObject(memory);
     const memDocRef = doc(db, 'memories', memory.id);
     await setDoc(memDocRef, cleanMemory);
     return true;
@@ -840,7 +848,7 @@ export const extractVideoMetadataAndThumbnail = (
       try {
         const vw = video.videoWidth || 640;
         const vh = video.videoHeight || 480;
-        const maxDim = 720;
+        const maxDim = 640;
         let width = vw;
         let height = vh;
         if (width > maxDim || height > maxDim) {
@@ -858,7 +866,10 @@ export const extractVideoMetadataAndThumbnail = (
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(video, 0, 0, width, height);
-          const thumb = canvas.toDataURL('image/jpeg', 0.72);
+          let thumb = canvas.toDataURL('image/jpeg', 0.65);
+          if (thumb.length > 140000) {
+            thumb = canvas.toDataURL('image/jpeg', 0.5);
+          }
           if (thumb && thumb.length > 500) {
             finish({ thumbnail: thumb, duration });
             return;
@@ -891,60 +902,169 @@ export const extractVideoMetadataAndThumbnail = (
 };
 
 /**
- * Tải file video lên máy chủ ứng dụng (/api/uploads/video) kèm theo dõi tiến độ %
+ * Chuẩn hóa & nhận diện loại video từ đường dẫn (file video trực tiếp, YouTube, Google Drive, Dropbox)
  */
-export const uploadVideoFile = (
+export const getVideoEmbedInfo = (
+  rawUrl?: string
+): { kind: 'direct' | 'iframe'; src: string; poster?: string } => {
+  if (!rawUrl) return { kind: 'direct', src: '' };
+  const trimmed = rawUrl.trim();
+
+  // YouTube video / shorts
+  const ytMatch = trimmed.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|live\/|watch\?.+&v=))([a-zA-Z0-9_-]{11})/i
+  );
+  if (ytMatch && ytMatch[1]) {
+    const id = ytMatch[1];
+    return {
+      kind: 'iframe',
+      src: `https://www.youtube.com/embed/${id}?playsinline=1&rel=0`,
+      poster: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+    };
+  }
+
+  // Google Drive video share link
+  const gdMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (gdMatch && gdMatch[1]) {
+    return {
+      kind: 'iframe',
+      src: `https://drive.google.com/file/d/${gdMatch[1]}/preview`
+    };
+  }
+
+  // Dropbox share link
+  if (/dropbox\.com/i.test(trimmed)) {
+    const direct = trimmed
+      .replace(/[?&]dl=[01]/i, '')
+      .concat(trimmed.includes('?') ? '&raw=1' : '?raw=1');
+    return { kind: 'direct', src: direct };
+  }
+
+  return { kind: 'direct', src: trimmed };
+};
+
+/**
+ * Tải file video lên máy chủ theo từng mảnh nhỏ (2MB/mảnh, tự thử lại 3 lần mỗi mảnh)
+ * Vượt qua giới hạn kích thước 32MB của Cloud Run và ổn định trên mạng 4G/5G iPhone!
+ */
+export const uploadVideoFile = async (
   file: File,
   onProgress?: (percent: number) => void
 ): Promise<{ videoUrl: string; size: number }> => {
-  return new Promise((resolve, reject) => {
-    const maxBytes = 80 * 1024 * 1024; // 80MB
-    if (file.size > maxBytes) {
-      reject(new Error('Video vượt quá giới hạn 80MB. Bạn hãy chọn video ngắn hơn hoặc nén nhẹ lại nhé!'));
-      return;
+  const maxBytes = 100 * 1024 * 1024; // 100MB
+  if (file.size > maxBytes) {
+    throw new Error('Video vượt quá giới hạn 100MB. Bạn hãy chọn video ngắn hơn nhé!');
+  }
+
+  if (file.size === 0) {
+    throw new Error('File video bị trống (0 byte). Bạn vui lòng chọn lại video khác nhé!');
+  }
+
+  const fileName = file.name || 'video.mp4';
+  const mimeType = file.type || 'video/mp4';
+
+  // Bước 1: Khởi tạo phiên tải chia mảnh
+  const initRes = await fetch('/api/uploads/video/init', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: fileName,
+      mimeType,
+      totalSize: file.size
+    })
+  });
+
+  const initCt = initRes.headers.get('content-type') || '';
+  if (!initRes.ok || !initCt.includes('application/json')) {
+    let errText = '';
+    try {
+      const errJson = await initRes.json();
+      errText = errJson?.message || '';
+    } catch {}
+    throw new Error(
+      errText ||
+        `Máy chủ tải video chưa phản hồi (HTTP ${initRes.status}). Bạn hãy thử tải lại trang hoặc dán link video (YouTube / Google Drive / MP4) nhé!`
+    );
+  }
+
+  const initData = await initRes.json();
+  if (!initData?.success || !initData?.uploadId) {
+    throw new Error(initData?.message || 'Không thể khởi tạo phiên tải video lên máy chủ.');
+  }
+
+  const uploadId: string = initData.uploadId;
+  const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB mỗi mảnh -> luôn nhỏ hơn mọi giới hạn proxy/Cloud Run
+  let offset = 0;
+
+  // Bước 2: Gửi từng mảnh 2MB với cơ chế tự thử lại 3 lần khi mạng di động chập chờn
+  while (offset < file.size) {
+    const end = Math.min(offset + CHUNK_SIZE, file.size);
+    const slice = file.slice(offset, end);
+    const chunkBuffer = await slice.arrayBuffer();
+
+    let lastErr: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const chunkRes = await fetch(
+          `/api/uploads/video/chunk?uploadId=${encodeURIComponent(uploadId)}&offset=${offset}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'X-Upload-Id': uploadId,
+              'X-Chunk-Offset': String(offset)
+            },
+            body: chunkBuffer
+          }
+        );
+
+        if (!chunkRes.ok) {
+          let msg = `Lỗi tải mảnh video (HTTP ${chunkRes.status})`;
+          try {
+            const j = await chunkRes.json();
+            if (j?.message) msg = j.message;
+          } catch {}
+          throw new Error(msg);
+        }
+
+        lastErr = null;
+        break;
+      } catch (err: any) {
+        lastErr = err instanceof Error ? err : new Error(String(err));
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 600 * attempt));
+        }
+      }
     }
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/uploads/video', true);
-    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name || 'video.mp4'));
+    if (lastErr) {
+      throw new Error(lastErr.message || 'Mạng bị gián đoạn khi tải video lên. Vui lòng thử lại nhé!');
+    }
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        const pct = Math.min(99, Math.round((event.loaded / event.total) * 100));
-        onProgress(pct);
-      }
-    };
+    offset = end;
+    if (onProgress) {
+      const pct = Math.min(96, Math.max(5, Math.round((offset / file.size) * 95)));
+      onProgress(pct);
+    }
+  }
 
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          if (data && data.success && data.videoUrl) {
-            if (onProgress) onProgress(100);
-            resolve({ videoUrl: data.videoUrl, size: data.size || file.size });
-            return;
-          }
-          reject(new Error(data?.message || 'Máy chủ không trả về đường dẫn video.'));
-        } catch {
-          reject(new Error('Phản hồi từ máy chủ không hợp lệ khi tải video.'));
-        }
-      } else {
-        try {
-          const errData = JSON.parse(xhr.responseText);
-          reject(new Error(errData?.message || `Lỗi tải video (HTTP ${xhr.status})`));
-        } catch {
-          reject(new Error(`Không thể tải video lên máy chủ (HTTP ${xhr.status}).`));
-        }
-      }
-    };
-
-    xhr.onerror = () => {
-      reject(new Error('Lỗi kết nối mạng khi tải video lên. Vui lòng thử lại nhé!'));
-    };
-
-    xhr.send(file);
+  // Bước 3: Hoàn tất ghép file trên máy chủ
+  const completeRes = await fetch('/api/uploads/video/complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId })
   });
+
+  const completeData = await completeRes.json().catch(() => null);
+  if (!completeRes.ok || !completeData?.success || !completeData?.videoUrl) {
+    throw new Error(completeData?.message || 'Không thể hoàn tất lưu video trên máy chủ.');
+  }
+
+  if (onProgress) onProgress(100);
+  return {
+    videoUrl: completeData.videoUrl,
+    size: completeData.size || file.size
+  };
 };
 
 export const formatVideoDuration = (seconds?: number): string => {
