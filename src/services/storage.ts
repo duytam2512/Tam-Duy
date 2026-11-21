@@ -21,6 +21,12 @@ import {
   deleteDoc,
   getDoc
 } from 'firebase/firestore';
+import {
+  uploadFileToCloudMedia,
+  deleteCloudMedia,
+  isCloudMediaUrl,
+  MAX_CLOUD_MEDIA_BYTES
+} from './cloudMedia';
 
 const PLAYLIST_KEY = 'goc_nho_playlist';
 const MEMORIES_KEY = 'goc_nho_binh_yen_memories_v3';
@@ -366,7 +372,12 @@ export const deleteSharedMemory = async (id: string): Promise<boolean> => {
 };
 
 export const deleteUploadedVideoFile = async (videoUrl?: string): Promise<void> => {
-  if (!videoUrl || !videoUrl.startsWith('/uploads/videos/')) return;
+  if (!videoUrl) return;
+  if (isCloudMediaUrl(videoUrl)) {
+    await deleteCloudMedia(videoUrl);
+    return;
+  }
+  if (!videoUrl.startsWith('/uploads/videos/')) return;
   const filename = videoUrl.split('/').pop();
   if (!filename) return;
   try {
@@ -944,8 +955,10 @@ export const getVideoEmbedInfo = (
 };
 
 /**
- * Tải file video lên máy chủ theo từng mảnh nhỏ (2MB/mảnh, tự thử lại 3 lần mỗi mảnh)
- * Vượt qua giới hạn kích thước 32MB của Cloud Run và ổn định trên mạng 4G/5G iPhone!
+ * Tải file video lên hệ thống theo 3 lớp tự động (không bao giờ lỗi 404 trên Vercel / PWA tĩnh):
+ * - Lớp 1: Tải chia mảnh 2MB qua máy chủ Express (/api/uploads/video/init -> chunk -> complete)
+ * - Lớp 2: Thử endpoint tương thích cũ (/api/uploads/video) nếu máy chủ bản cũ chưa có /init
+ * - Lớp 3: Tự động lưu chia mảnh 500KB lên Cloud Firestore + bộ nhớ đệm IndexedDB (đồng bộ iPhone <-> Laptop, không cần Node server!)
  */
 export const uploadVideoFile = async (
   file: File,
@@ -963,32 +976,92 @@ export const uploadVideoFile = async (
   const fileName = file.name || 'video.mp4';
   const mimeType = file.type || 'video/mp4';
 
-  // Bước 1: Khởi tạo phiên tải chia mảnh
-  const initRes = await fetch('/api/uploads/video/init', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      filename: fileName,
-      mimeType,
-      totalSize: file.size
-    })
-  });
+  const fallbackToCloudMedia = async (): Promise<{ videoUrl: string; size: number }> => {
+    const uploaded = await uploadFileToCloudMedia(file, onProgress, MAX_CLOUD_MEDIA_BYTES);
+    return {
+      videoUrl: uploaded.mediaUrl,
+      size: uploaded.size
+    };
+  };
+
+  // Bước 1: Thử khởi tạo phiên tải chia mảnh trên máy chủ Express
+  let initRes: Response | null = null;
+  try {
+    initRes = await fetch('/api/uploads/video/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: fileName,
+        mimeType,
+        totalSize: file.size
+      })
+    });
+  } catch {
+    // Máy chủ Node không phản hồi -> chuyển thẳng sang đồng bộ Cloud Firestore
+    return fallbackToCloudMedia();
+  }
 
   const initCt = initRes.headers.get('content-type') || '';
-  if (!initRes.ok || !initCt.includes('application/json')) {
+  const serverRouteMissing =
+    initRes.status === 404 ||
+    initRes.status === 405 ||
+    initRes.status === 501 ||
+    !initCt.includes('application/json');
+
+  if (serverRouteMissing) {
+    // Lớp 2: Thử endpoint tương thích cũ (/api/uploads/video) nếu file <= 25MB
+    if (file.size <= 25 * 1024 * 1024) {
+      try {
+        if (onProgress) onProgress(15);
+        const legacyRes = await fetch('/api/uploads/video', {
+          method: 'POST',
+          headers: {
+            'Content-Type': mimeType,
+            'X-File-Name': encodeURIComponent(fileName)
+          },
+          body: file
+        });
+        const legacyCt = legacyRes.headers.get('content-type') || '';
+        if (legacyRes.ok && legacyCt.includes('application/json')) {
+          const legacyData = await legacyRes.json();
+          if (legacyData?.success && legacyData?.videoUrl) {
+            if (onProgress) onProgress(100);
+            return {
+              videoUrl: legacyData.videoUrl,
+              size: legacyData.size || file.size
+            };
+          }
+        }
+      } catch {
+        // Tiếp tục xuống Lớp 3 (Cloud Firestore)
+      }
+    }
+
+    // Lớp 3: Lưu trực tiếp lên Cloud Firestore (hoạt động 100% trên Vercel / PWA tĩnh / mọi trình duyệt!)
+    return fallbackToCloudMedia();
+  }
+
+  if (!initRes.ok) {
     let errText = '';
     try {
       const errJson = await initRes.json();
       errText = errJson?.message || '';
     } catch {}
+    // Nếu server báo lỗi 5xx mà file <= 24MB -> dự phòng ngay lên Cloud Firestore
+    if (initRes.status >= 500 && file.size <= MAX_CLOUD_MEDIA_BYTES) {
+      return fallbackToCloudMedia();
+    }
     throw new Error(
       errText ||
-        `Máy chủ tải video chưa phản hồi (HTTP ${initRes.status}). Bạn hãy thử tải lại trang hoặc dán link video (YouTube / Google Drive / MP4) nhé!`
+        `Không thể tải video lên máy chủ (HTTP ${initRes.status}). Bạn hãy thử video nhẹ hơn hoặc dán link video nhé!`
     );
   }
 
   const initData = await initRes.json();
   if (!initData?.success || !initData?.uploadId) {
+    if (file.size <= MAX_CLOUD_MEDIA_BYTES) {
+      return fallbackToCloudMedia();
+    }
     throw new Error(initData?.message || 'Không thể khởi tạo phiên tải video lên máy chủ.');
   }
 
@@ -1038,6 +1111,10 @@ export const uploadVideoFile = async (
     }
 
     if (lastErr) {
+      // Nếu lỗi phiên giữa chừng trên Cloud Run đa instance và file <= 24MB -> tự chuyển sang Cloud Firestore
+      if (file.size <= MAX_CLOUD_MEDIA_BYTES) {
+        return fallbackToCloudMedia();
+      }
       throw new Error(lastErr.message || 'Mạng bị gián đoạn khi tải video lên. Vui lòng thử lại nhé!');
     }
 
@@ -1057,6 +1134,9 @@ export const uploadVideoFile = async (
 
   const completeData = await completeRes.json().catch(() => null);
   if (!completeRes.ok || !completeData?.success || !completeData?.videoUrl) {
+    if (file.size <= MAX_CLOUD_MEDIA_BYTES) {
+      return fallbackToCloudMedia();
+    }
     throw new Error(completeData?.message || 'Không thể hoàn tất lưu video trên máy chủ.');
   }
 

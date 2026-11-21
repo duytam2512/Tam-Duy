@@ -33,6 +33,13 @@ import {
   savePlaylistBoth,
   subscribeToSharedPlaylist
 } from '../services/storage';
+import {
+  isCloudMediaUrl,
+  getCachedCloudMediaUrl,
+  resolveCloudMediaUrl,
+  uploadFileToCloudMedia,
+  deleteCloudMedia
+} from '../services/cloudMedia';
 
 declare global {
   interface Window {
@@ -401,58 +408,82 @@ const MusicPlayerInner: React.FC = () => {
         audio.muted = isMutedRef.current;
 
         const targetUrl = track.url;
-        const needsReload =
-          loadedAudioUrlRef.current !== targetUrl || Boolean(audio.error) || audio.readyState === 0;
-        if (needsReload) {
-          usedProxyForUrlRef.current = '';
-          loadedAudioUrlRef.current = targetUrl;
-          audio.src = targetUrl;
-          audio.load();
-        }
+        if (!targetUrl) return;
 
-        if (shouldPlay) {
-          setIsBuffering(true);
-          const playPromise = audio.play();
-          if (playPromise && typeof playPromise.then === 'function') {
-            playPromise
-              .then(() => {
-                consecutiveErrorsRef.current = 0;
-                setIsPlaying(true);
-                setIsBuffering(false);
-              })
-              .catch((err: any) => {
-                console.warn('Lỗi phát HTML5 Audio:', err?.name, err?.message);
-                if (err?.name === 'NotAllowedError') {
-                  wantsToPlayRef.current = false;
+        const startHtmlAudio = (resolvedUrl: string) => {
+          const needsReload =
+            loadedAudioUrlRef.current !== resolvedUrl || Boolean(audio.error) || audio.readyState === 0;
+          if (needsReload) {
+            usedProxyForUrlRef.current = '';
+            loadedAudioUrlRef.current = resolvedUrl;
+            audio.src = resolvedUrl;
+            audio.load();
+          }
+
+          if (shouldPlay) {
+            setIsBuffering(true);
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.then === 'function') {
+              playPromise
+                .then(() => {
+                  consecutiveErrorsRef.current = 0;
+                  setIsPlaying(true);
                   setIsBuffering(false);
-                  setIsPlaying(false);
-                  showNotice('🔊 Hãy chạm nút Phát một lần nữa để mở âm thanh trên điện thoại nhé!');
-                } else if (err?.name !== 'AbortError') {
-                  // Nếu là link ngoài chưa thử proxy -> thử ngay qua /api/audio/proxy
-                  if (/^https?:\/\//i.test(targetUrl) && usedProxyForUrlRef.current !== targetUrl) {
-                    usedProxyForUrlRef.current = targetUrl;
-                    const proxied = `/api/audio/proxy?url=${encodeURIComponent(targetUrl)}`;
-                    loadedAudioUrlRef.current = proxied;
-                    audio.src = proxied;
-                    audio.load();
-                    audio.play().catch(() => {
-                      setIsBuffering(false);
-                      setIsPlaying(false);
-                    });
-                  } else {
+                })
+                .catch((err: any) => {
+                  console.warn('Lỗi phát HTML5 Audio:', err?.name, err?.message);
+                  if (err?.name === 'NotAllowedError') {
+                    wantsToPlayRef.current = false;
                     setIsBuffering(false);
                     setIsPlaying(false);
+                    showNotice('🔊 Hãy chạm nút Phát một lần nữa để mở âm thanh trên điện thoại nhé!');
+                  } else if (err?.name !== 'AbortError') {
+                    // Nếu là link ngoài chưa thử proxy -> thử ngay qua /api/audio/proxy
+                    if (/^https?:\/\//i.test(resolvedUrl) && usedProxyForUrlRef.current !== resolvedUrl) {
+                      usedProxyForUrlRef.current = resolvedUrl;
+                      const proxied = `/api/audio/proxy?url=${encodeURIComponent(resolvedUrl)}`;
+                      loadedAudioUrlRef.current = proxied;
+                      audio.src = proxied;
+                      audio.load();
+                      audio.play().catch(() => {
+                        setIsBuffering(false);
+                        setIsPlaying(false);
+                      });
+                    } else {
+                      setIsBuffering(false);
+                      setIsPlaying(false);
+                    }
                   }
-                }
-              });
+                });
+            } else {
+              setIsPlaying(true);
+              setIsBuffering(false);
+            }
           } else {
-            setIsPlaying(true);
+            audio.pause();
+            setIsPlaying(false);
             setIsBuffering(false);
           }
+        };
+
+        if (isCloudMediaUrl(targetUrl)) {
+          const cachedBlobUrl = getCachedCloudMediaUrl(targetUrl);
+          if (cachedBlobUrl) {
+            startHtmlAudio(cachedBlobUrl);
+          } else {
+            if (shouldPlay) setIsBuffering(true);
+            resolveCloudMediaUrl(targetUrl)
+              .then((blobUrl) => {
+                if (blobUrl) startHtmlAudio(blobUrl);
+              })
+              .catch(() => {
+                setIsBuffering(false);
+                setIsPlaying(false);
+                showNotice('⚠️ Không thể tải file nhạc từ đám mây lúc này.');
+              });
+          }
         } else {
-          audio.pause();
-          setIsPlaying(false);
-          setIsBuffering(false);
+          startHtmlAudio(targetUrl);
         }
       }
     },
@@ -646,7 +677,7 @@ const MusicPlayerInner: React.FC = () => {
           }
         } catch {}
       }
-    } else if (audioRef.current && loadedAudioUrlRef.current !== currentTrack.url) {
+    } else if (audioRef.current && currentTrack.url && !isCloudMediaUrl(currentTrack.url) && loadedAudioUrlRef.current !== currentTrack.url) {
       loadedAudioUrlRef.current = currentTrack.url;
       audioRef.current.src = currentTrack.url;
       audioRef.current.preload = 'auto';
@@ -727,21 +758,44 @@ const MusicPlayerInner: React.FC = () => {
     setToastMessage(`Đang tải lên "${file.name}"...`);
 
     try {
-      const response = await fetch('/api/music/upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': file.type || 'audio/mpeg',
-          'X-File-Name': encodeURIComponent(file.name)
-        },
-        body: file
-      });
+      let newSong: MusicTrack | null = null;
 
-      const data = await response.json();
-      if (!response.ok || !data?.success || !data?.song) {
-        throw new Error(data?.message || 'Không thể tải file nhạc lên máy chủ');
+      try {
+        const response = await fetch('/api/music/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': file.type || 'audio/mpeg',
+            'X-File-Name': encodeURIComponent(file.name)
+          },
+          body: file
+        });
+
+        const ct = response.headers.get('content-type') || '';
+        if (response.ok && ct.includes('application/json')) {
+          const data = await response.json();
+          if (data?.success && data?.song) {
+            newSong = data.song;
+          }
+        }
+      } catch {
+        // Sẽ tự động chuyển sang lưu Cloud Firestore bên dưới
       }
 
-      const newSong: MusicTrack = data.song;
+      if (!newSong) {
+        const uploaded = await uploadFileToCloudMedia(file, (pct) => {
+          setToastMessage(`Đang đồng bộ "${file.name}" lên đám mây (${pct}%)...`);
+        });
+        const cleanTitle =
+          file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Bài hát của hai đứa';
+        newSong = {
+          id: `upload-${Date.now()}`,
+          title: cleanTitle,
+          artist: 'Nhạc tải lên từ máy',
+          mood: 'Yêu thích',
+          url: uploaded.mediaUrl
+        };
+      }
+
       const updated = [...playlist, newSong];
       setPlaylist(updated);
       await savePlaylistBoth(updated);
@@ -1003,9 +1057,13 @@ const MusicPlayerInner: React.FC = () => {
       return;
     }
 
+    const removedTrack = playlist[trackIndex];
     const updated = playlist.filter((t) => t.id !== trackId);
     setPlaylist(updated);
     await savePlaylistBoth(updated);
+    if (removedTrack?.url && isCloudMediaUrl(removedTrack.url)) {
+      deleteCloudMedia(removedTrack.url).catch(() => {});
+    }
 
     // Nếu bài đang phát bị xóa
     if (trackIndex === currentTrackIndex) {

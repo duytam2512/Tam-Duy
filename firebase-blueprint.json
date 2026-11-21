@@ -99,6 +99,59 @@
         }
       },
       "required": ["personOne", "personTwo", "startDate"]
+    },
+    "MediaFile": {
+      "title": "MediaFile",
+      "description": "Metadata của tệp video hoặc âm thanh được chia mảnh lưu đồng bộ trên Cloud Firestore",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Mã định danh tệp media"
+        },
+        "mimeType": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Định dạng MIME của tệp (vd: video/mp4, video/quicktime, audio/mpeg)"
+        },
+        "filename": {
+          "type": "string",
+          "maxLength": 255,
+          "description": "Tên tệp gốc"
+        },
+        "totalSize": {
+          "type": "number",
+          "description": "Tổng dung lượng tệp (byte, tối đa 25MB)"
+        },
+        "totalChunks": {
+          "type": "number",
+          "description": "Tổng số mảnh dữ liệu (tối đa 60 mảnh)"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Thời gian tạo tệp (epoch ms)"
+        }
+      },
+      "required": ["id", "mimeType", "filename", "totalSize", "totalChunks", "createdAt"]
+    },
+    "MediaChunk": {
+      "title": "MediaChunk",
+      "description": "Một mảnh dữ liệu nhị phân mã hóa base64 (<= 500KB gốc) của tệp media",
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "number",
+          "description": "Thứ tự mảnh bắt đầu từ 0"
+        },
+        "data": {
+          "type": "string",
+          "maxLength": 900000,
+          "description": "Nội dung mảnh mã hóa base64"
+        }
+      },
+      "required": ["index", "data"]
     }
   },
   "firestore": {
@@ -119,6 +172,18 @@
         "$ref": "#/entities/Memory"
       },
       "description": "Bộ sưu tập các kỷ niệm tình yêu của hai đứa"
+    },
+    "/media_files/{mediaId}": {
+      "schema": {
+        "$ref": "#/entities/MediaFile"
+      },
+      "description": "Thông tin tệp video/âm thanh tải lên đồng bộ giữa các thiết bị"
+    },
+    "/media_files/{mediaId}/chunks/{chunkId}": {
+      "schema": {
+        "$ref": "#/entities/MediaChunk"
+      },
+      "description": "Các mảnh dữ liệu base64 của tệp video/âm thanh"
     },
     "/test/{docId}": {
       "schema": {

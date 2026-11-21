@@ -28,5 +28,41 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if isValidId(memoryId);
     }
+
+    // Helper xác thực tệp media chia mảnh (video / âm thanh)
+    function isValidMediaFile(data, mediaId) {
+      return data.keys().hasAll(['id', 'mimeType', 'filename', 'totalSize', 'totalChunks', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'mimeType', 'filename', 'totalSize', 'totalChunks', 'createdAt']) &&
+        data.id is string && data.id == mediaId &&
+        data.mimeType is string && data.mimeType.size() > 0 && data.mimeType.size() <= 100 &&
+        data.filename is string && data.filename.size() > 0 && data.filename.size() <= 255 &&
+        data.totalSize is number && data.totalSize > 0 && data.totalSize <= 26214400 &&
+        data.totalChunks is int && data.totalChunks > 0 && data.totalChunks <= 60 &&
+        data.createdAt is number;
+    }
+
+    function isValidMediaChunk(data) {
+      return data.keys().hasAll(['index', 'data']) &&
+        data.keys().hasOnly(['index', 'data']) &&
+        data.index is int && data.index >= 0 && data.index < 60 &&
+        data.data is string && data.data.size() > 0 && data.data.size() <= 900000;
+    }
+
+    // Collection lưu tệp video/nhạc chia mảnh đồng bộ mọi thiết bị (hoạt động cả khi không có máy chủ Node.js)
+    match /media_files/{mediaId} {
+      allow get: if isValidId(mediaId);
+      allow create: if isValidId(mediaId) && isValidMediaFile(request.resource.data, mediaId);
+      allow delete: if isValidId(mediaId);
+      allow list, update: if false;
+
+      match /chunks/{chunkId} {
+        allow get: if isValidId(mediaId) && isValidId(chunkId);
+        allow create: if isValidId(mediaId) && isValidId(chunkId) &&
+          isValidMediaChunk(request.resource.data) &&
+          exists(/databases/$(database)/documents/media_files/$(mediaId));
+        allow delete: if isValidId(mediaId) && isValidId(chunkId);
+        allow list, update: if false;
+      }
+    }
   }
 }
