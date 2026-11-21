@@ -65,8 +65,28 @@ const YOUTUBE_PRESETS = [
   }
 ];
 
-export const MusicPlayer: React.FC = () => {
-  const [playlist, setPlaylist] = useState<MusicTrack[]>(() => getStoredPlaylist());
+const sanitizePlaylistTracks = (tracks: MusicTrack[] | null | undefined): MusicTrack[] => {
+  if (!Array.isArray(tracks) || tracks.length === 0) return DEFAULT_PLAYLIST;
+  const valid = tracks
+    .filter((t): t is MusicTrack => Boolean(t && typeof t === 'object' && (t.url || t.youtubeId)))
+    .map((t, idx) => {
+      const url = typeof t.url === 'string' ? t.url : t.youtubeId ? `https://www.youtube.com/watch?v=${t.youtubeId}` : '';
+      const inferredYtId = t.youtubeId || (t.isYouTube ? extractYouTubeId(url) || undefined : undefined);
+      return {
+        ...t,
+        id: typeof t.id === 'string' && t.id.trim() ? t.id : `track-${idx}-${Date.now()}`,
+        title: typeof t.title === 'string' && t.title.trim() ? t.title : 'Giai điệu của hai đứa',
+        artist: typeof t.artist === 'string' && t.artist.trim() ? t.artist : 'Góc Nhỏ Bình Yên',
+        mood: typeof t.mood === 'string' && t.mood.trim() ? t.mood : 'Lãng mạn',
+        url,
+        ...(inferredYtId ? { isYouTube: true, youtubeId: inferredYtId } : {})
+      };
+    });
+  return valid.length > 0 ? valid : DEFAULT_PLAYLIST;
+};
+
+const MusicPlayerInner: React.FC = () => {
+  const [playlist, setPlaylist] = useState<MusicTrack[]>(() => sanitizePlaylistTracks(getStoredPlaylist()));
   const [isCloudSynced, setIsCloudSynced] = useState(false);
 
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
@@ -104,6 +124,7 @@ export const MusicPlayer: React.FC = () => {
   const [customUrl, setCustomUrl] = useState('');
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const ytHostRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const [isYtReady, setIsYtReady] = useState(false);
   const [showYtMiniPlayer, setShowYtMiniPlayer] = useState(false);
@@ -117,6 +138,7 @@ export const MusicPlayer: React.FC = () => {
   const isPlayingRef = useRef<boolean>(isPlaying);
   const wantsToPlayRef = useRef<boolean>(false);
   const ytWatchdogRef = useRef<number | null>(null);
+  const playlistLengthRef = useRef<number>(playlist.length);
 
   // Vị trí linh hoạt của máy phát nhạc (Draggable Music Player)
   const widgetRef = useRef<HTMLDivElement>(null);
@@ -280,7 +302,8 @@ export const MusicPlayer: React.FC = () => {
     volumeRef.current = volume;
     isMutedRef.current = isMuted;
     isPlayingRef.current = isPlaying;
-  }, [volume, isMuted, isPlaying]);
+    playlistLengthRef.current = playlist.length;
+  }, [volume, isMuted, isPlaying, playlist.length]);
 
   const showNotice = useCallback((msg: string, duration = 3800) => {
     setWidgetNotice(msg);
@@ -459,8 +482,9 @@ export const MusicPlayer: React.FC = () => {
   useEffect(() => {
     const unsubscribe = subscribeToSharedPlaylist((sharedTracks) => {
       if (sharedTracks && sharedTracks.length > 0) {
-        setPlaylist(sharedTracks);
-        setCurrentTrackIndex((prev) => (prev >= sharedTracks.length ? 0 : prev));
+        const clean = sanitizePlaylistTracks(sharedTracks);
+        setPlaylist(clean);
+        setCurrentTrackIndex((prev) => (prev >= clean.length ? 0 : prev));
         setIsCloudSynced(true);
       }
     });
@@ -468,15 +492,22 @@ export const MusicPlayer: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. KHỞI TẠO YOUTUBE IFRAME API (Có hỗ trợ origin, unMute và bắt lỗi tự động chuyển bài)
+  // 2. KHỞI TẠO YOUTUBE IFRAME API (Dùng thẻ con tạo động trong ytHostRef để không bao giờ xung đột DOM với React)
   useEffect(() => {
+    let isDisposed = false;
+
     const initYT = () => {
+      if (isDisposed) return;
       if (window.YT && window.YT.Player) {
-        if (!ytPlayerRef.current) {
+        if (!ytPlayerRef.current && ytHostRef.current) {
           try {
-            ytPlayerRef.current = new window.YT.Player('yt-player-target', {
-              height: '124',
-              width: '220',
+            const mountEl = document.createElement('div');
+            ytHostRef.current.innerHTML = '';
+            ytHostRef.current.appendChild(mountEl);
+
+            ytPlayerRef.current = new window.YT.Player(mountEl, {
+              height: '135',
+              width: '240',
               playerVars: {
                 playsinline: 1,
                 controls: 1,
@@ -488,6 +519,7 @@ export const MusicPlayer: React.FC = () => {
               },
               events: {
                 onReady: () => {
+                  if (isDisposed) return;
                   setIsYtReady(true);
                   try {
                     if (ytPlayerRef.current?.setVolume) {
@@ -509,6 +541,7 @@ export const MusicPlayer: React.FC = () => {
                   }
                 },
                 onStateChange: (event: any) => {
+                  if (isDisposed) return;
                   // 0=ENDED, 1=PLAYING, 2=PAUSED, 3=BUFFERING
                   if (event.data === 0) {
                     clearYtWatchdog();
@@ -529,11 +562,12 @@ export const MusicPlayer: React.FC = () => {
                   }
                 },
                 onError: (event: any) => {
+                  if (isDisposed) return;
                   console.warn('Lỗi phát video YouTube (mã lỗi):', event?.data);
                   clearYtWatchdog();
                   setIsBuffering(false);
                   consecutiveErrorsRef.current += 1;
-                  if (consecutiveErrorsRef.current < Math.max(2, playlist.length)) {
+                  if (consecutiveErrorsRef.current < Math.max(2, playlistLengthRef.current)) {
                     showNotice('⚠️ Video YouTube này bị chủ kênh chặn phát nhúng, đang chuyển sang bài tiếp theo...');
                     window.setTimeout(() => handleNextRef.current(), 800);
                   } else {
@@ -564,7 +598,18 @@ export const MusicPlayer: React.FC = () => {
     } else {
       initYT();
     }
-  }, [playlist.length, showNotice]);
+
+    return () => {
+      isDisposed = true;
+      clearYtWatchdog();
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.destroy === 'function') {
+        try {
+          ytPlayerRef.current.destroy();
+        } catch {}
+      }
+      ytPlayerRef.current = null;
+    };
+  }, [showNotice, clearYtWatchdog]);
 
   // Đồng bộ âm lượng cho cả HTML Audio và YouTube Player
   useEffect(() => {
@@ -1041,7 +1086,8 @@ export const MusicPlayer: React.FC = () => {
             </button>
           </div>
         )}
-        <div id="yt-player-target" className="w-full h-[135px]" />
+        {/* Container cố định không có con React để YouTube API gắn iframe an toàn (tránh lỗi trắng màn hình) */}
+        <div ref={ytHostRef} className="w-full h-[135px]" />
       </div>
 
       {/* Floating Music Widget (Di chuyển linh hoạt khắp màn hình - Mobile & Desktop) */}
@@ -1299,9 +1345,10 @@ export const MusicPlayer: React.FC = () => {
             <div className="space-y-1.5 overflow-y-auto max-h-[30vh] pr-1 py-1">
               {playlist.map((track, idx) => {
                 const isSelected = idx === currentTrackIndex;
-                const isCustom = track.id.startsWith('custom-');
-                const isZing = track.isZing || track.id.startsWith('zing-');
-                const isYt = track.isYouTube || track.id.startsWith('yt-');
+                const trackIdStr = String(track?.id || '');
+                const isCustom = trackIdStr.startsWith('custom-');
+                const isZing = Boolean(track?.isZing) || trackIdStr.startsWith('zing-');
+                const isYt = Boolean(track?.isYouTube) || trackIdStr.startsWith('yt-');
                 return (
                   <div
                     key={track.id}
@@ -1727,3 +1774,45 @@ export const MusicPlayer: React.FC = () => {
     </>
   );
 };
+
+class MusicPlayerErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('[MusicPlayer] Đã chặn lỗi trình phát nhạc:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed bottom-6 left-4 z-40">
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false })}
+            className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-[#FFFDF9]/95 border border-[#E8A598]/60 shadow-lg text-xs text-[#3D2E28] cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-[#D98A76]" />
+            <span>Tải lại trình phát nhạc</span>
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export const MusicPlayer: React.FC = () => (
+  <MusicPlayerErrorBoundary>
+    <MusicPlayerInner />
+  </MusicPlayerErrorBoundary>
+);
