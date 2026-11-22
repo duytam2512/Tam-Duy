@@ -36,7 +36,7 @@ import {
   subscribeToSharedMemories,
   saveSharedMemory,
   deleteSharedMemory,
-  deleteUploadedVideoFile,
+  deleteMemoryCloudAssets,
   subscribeToSharedCoupleInfo,
   subscribeToSharedBgSettings,
   getStoredDiaryEntries,
@@ -175,27 +175,64 @@ export function App() {
   // Tổng số lượt yêu thích
   const totalLikes = memories.reduce((acc, curr) => acc + (curr.likes || 0), 0);
 
-  // Thêm kỷ niệm mới (hỗ trợ cả 1 kỷ niệm hoặc danh sách nhiều kỷ niệm)
+  // Thêm kỷ niệm mới (hỗ trợ cả 1 kỷ niệm, album nhiều ảnh 10-30 ảnh hoặc nhiều kỷ niệm riêng biệt)
   const handleAddMemory = async (
     newMemData:
       | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>
-      | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>[]
+      | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>[],
+    onProgress?: (statusText: string) => void
   ) => {
     const items = Array.isArray(newMemData) ? newMemData : [newMemData];
+    const baseTime = Date.now();
     const newMemories: Memory[] = items.map((item, idx) => ({
       ...item,
-      id: `mem-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+      id: `mem-${baseTime}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
       likes: 1,
       isLiked: true,
-      createdAt: Date.now() + idx
+      createdAt: baseTime + idx
     }));
 
-    const updated = [...newMemories, ...memories];
-    setMemories(updated);
-    saveMemoriesToStorage(updated);
-    for (const mem of newMemories) {
-      await saveSharedMemory(mem);
+    const savedMemories: Memory[] = [];
+
+    if (newMemories.length === 1) {
+      const mem = newMemories[0];
+      const photoCount = mem.images?.length || 1;
+      onProgress?.(
+        photoCount > 1
+          ? `Đang chuẩn bị lưu album ${photoCount} ảnh lên đám mây...`
+          : 'Đang lưu kỷ niệm lên đám mây...'
+      );
+      const prepared = await saveSharedMemory(mem, (done, total) => {
+        onProgress?.(`Đang lưu ảnh album lên đám mây (${done}/${total})...`);
+      });
+      savedMemories.push(prepared);
+    } else {
+      // Đăng nhiều bài viết riêng biệt theo từng đợt 3 bài để không quá tải mạng/điện thoại
+      const BATCH_SIZE = 3;
+      let completed = 0;
+      const total = newMemories.length;
+      onProgress?.(`Đang lưu kỷ niệm (0/${total})...`);
+
+      for (let i = 0; i < total; i += BATCH_SIZE) {
+        const batch = newMemories.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(
+          batch.map(async (mem) => {
+            const prepared = await saveSharedMemory(mem);
+            completed += 1;
+            onProgress?.(`Đang lưu kỷ niệm (${completed}/${total})...`);
+            return prepared;
+          })
+        );
+        savedMemories.push(...batchResults);
+      }
     }
+
+    setMemories((prev) => {
+      const savedIds = new Set(savedMemories.map((m) => m.id));
+      const updated = [...savedMemories, ...prev.filter((m) => !savedIds.has(m.id))];
+      saveMemoriesToStorage(updated);
+      return updated;
+    });
   };
 
   // Thả tim kỷ niệm
@@ -225,8 +262,8 @@ export function App() {
     setMemories(updated);
     saveMemoriesToStorage(updated);
     await deleteSharedMemory(id);
-    if (target?.videoUrl) {
-      await deleteUploadedVideoFile(target.videoUrl);
+    if (target) {
+      await deleteMemoryCloudAssets(target);
     }
     if (selectedLightboxIndex !== null) {
       setSelectedLightboxIndex(null);

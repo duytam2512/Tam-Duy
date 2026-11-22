@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Memory } from '../types';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
+import { SmartImage } from './SmartImage';
 
 interface LightboxModalProps {
   memory: Memory;
@@ -180,7 +181,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               iframeClassName="w-full max-w-3xl aspect-video max-h-[58vh] rounded-xl shadow-2xl bg-black"
             />
           ) : (
-            <img
+            <SmartImage
               src={activeImageUrl}
               alt={memory.caption}
               style={{
@@ -225,7 +226,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                     : 'border-white/30 opacity-60 hover:opacity-100'
                 }`}
               >
-                <img src={img} alt={`Album img ${i + 1}`} className="w-full h-full object-cover" />
+                <SmartImage src={img} alt={`Album img ${i + 1}`} className="w-full h-full object-cover" />
               </button>
             ))}
           </div>

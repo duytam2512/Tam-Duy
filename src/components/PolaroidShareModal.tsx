@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Download, Share2, Copy, Check, X, Sparkles, Heart } from 'lucide-react';
 import { Memory, CoupleInfo, CaptionFont } from '../types';
+import { resolveCloudMediaUrl } from '../services/cloudMedia';
 
 interface PolaroidShareModalProps {
   memory: Memory;
@@ -25,6 +26,7 @@ export const PolaroidShareModal: React.FC<PolaroidShareModalProps> = ({
   useEffect(() => {
     if (!isOpen || !memory) return;
 
+    let isCancelled = false;
     setIsGenerating(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -36,6 +38,7 @@ export const PolaroidShareModal: React.FC<PolaroidShareModalProps> = ({
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
+      if (isCancelled) return;
       // Thiết kế kích thước khung ảnh Polaroid chất lượng cao
       const canvasWidth = 800;
       const photoWidth = 720;
@@ -125,12 +128,25 @@ export const PolaroidShareModal: React.FC<PolaroidShareModalProps> = ({
     };
 
     img.onerror = () => {
+      if (isCancelled) return;
       console.warn('Không thể tải ảnh cho canvas');
       setIsGenerating(false);
     };
 
-    img.src = memory.imageUrl;
-  }, [isOpen, memory, coupleInfo]);
+    resolveCloudMediaUrl(memory.imageUrl)
+      .then((resolvedUrl) => {
+        if (isCancelled) return;
+        img.src = resolvedUrl;
+      })
+      .catch(() => {
+        if (isCancelled) return;
+        setIsGenerating(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOpen, memory, coupleInfo, currentFont]);
 
   const handleCopyLink = async () => {
     try {

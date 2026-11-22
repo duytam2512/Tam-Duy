@@ -511,32 +511,176 @@ export interface MusicTrack {
   youtubeId?: string;
 }
 
-export const DEFAULT_PLAYLIST: MusicTrack[] = [
+export const VPOP_FEATURED_TRACKS: MusicTrack[] = [
   {
     id: "zing-ZqfoKtrd1H7M",
     title: "Nàng Thơ",
     artist: "Hoàng Dũng",
-    mood: "Lãng mạn",
+    mood: "V-Pop Lãng mạn",
     url: "/music/ZqfoKtrd1H7M.mp3",
     thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/e/6/7/e/e67ea0b93182adbf44c6a019591834df.jpg",
     duration: 254,
     isZing: true
   },
   {
+    id: "zing-d7qtCrRV89zn",
+    title: "Nơi Này Có Anh",
+    artist: "Sơn Tùng M-TP",
+    mood: "V-Pop Ngọt ngào",
+    url: "/music/d7qtCrRV89zn.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/covers/3/a/3a9e48bc4df7bbde3acea30cc267f609_1487066528.jpg",
+    duration: 262,
+    isZing: true
+  },
+  {
+    id: "zing-fITftN1bwVlE",
+    title: "Muộn Rồi Mà Sao Còn",
+    artist: "Sơn Tùng M-TP",
+    mood: "V-Pop Tình yêu",
+    url: "/music/fITftN1bwVlE.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/e/f/6/c/ef6c9d4b97048c9911ea6069e968dadb.jpg",
+    duration: 276,
+    isZing: true
+  },
+  {
+    id: "zing-G632MoL0PDyK",
+    title: "Có Chắc Yêu Là Đây",
+    artist: "Sơn Tùng M-TP",
+    mood: "V-Pop Rộn ràng",
+    url: "/music/G632MoL0PDyK.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/9/d/7/9/9d79ebd03bbb6482bab748d67bbe0afb.jpg",
+    duration: 215,
+    isZing: true
+  },
+  {
+    id: "zing-Je4jMhw0MdA",
+    title: "Hơn Cả Yêu",
+    artist: "Đức Phúc",
+    mood: "V-Pop Lãng mạn",
+    url: "/music/Je4jMhw0MdA.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/a/9/e/d/a9ed142c215560ab45f6b2b433907f90.jpg",
+    duration: 256,
+    isZing: true
+  },
+  {
+    id: "zing-m7cEYB3NQrU9",
+    title: "Ánh Nắng Của Anh",
+    artist: "Đức Phúc",
+    mood: "V-Pop Sâu lắng",
+    url: "/music/m7cEYB3NQrU9.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/avatars/d/7/d7f34aa6b1112e4b605f6c6e7eccd162_1509437674.jpg",
+    duration: 264,
+    isZing: true
+  },
+  {
+    id: "zing-nRiqUTVhLd1F",
+    title: "Tháng Tư Là Lời Nói Dối Của Em",
+    artist: "Hà Anh Tuấn",
+    mood: "V-Pop Ballad",
+    url: "/music/nRiqUTVhLd1F.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/covers/6/a/6a2a34ad78550e5b3f51f6d954f51ca5_1505190964.jpg",
+    duration: 310,
+    isZing: true
+  },
+  {
+    id: "zing-n72MCrTSAcQm",
+    title: "Tháng Mấy Em Nhớ Anh?",
+    artist: "Hà Anh Tuấn",
+    mood: "V-Pop Ballad",
+    url: "/music/n72MCrTSAcQm.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/2/d/b/9/2db9a78a4bb650f5f79a094d6a142bf6.jpg",
+    duration: 300,
+    isZing: true
+  },
+  {
+    id: "zing-SLoLmOdG1S3m",
+    title: "Có Chàng Trai Viết Lên Cây",
+    artist: "Phan Mạnh Quỳnh",
+    mood: "V-Pop Sâu lắng",
+    url: "/music/SLoLmOdG1S3m.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/d/5/2/c/d52c96262085277128e3e5b10e30a170.jpg",
+    duration: 268,
+    isZing: true
+  },
+  {
+    id: "zing-wa1OPT4kVty4",
+    title: "Sau Tất Cả",
+    artist: "ERIK",
+    mood: "V-Pop Ballad",
+    url: "/music/wa1OPT4kVty4.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/covers/5/5/55a2e33a5d4d6a70f5144181c28eacb0_1452855672.jpg",
+    duration: 235,
+    isZing: true
+  },
+  {
     id: "zing-nOSwbgV9mMU",
     title: "Chỉ Là Không Cùng Nhau (Live)",
     artist: "Tăng Phúc, Trương Thảo Nhi",
-    mood: "Sâu lắng",
+    mood: "V-Pop Sâu lắng",
     url: "/music/nOSwbgV9mMU.mp3",
     thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/1/f/1/a/1f1ab8428a983f8a7700bfaa5591713b.jpg",
     duration: 226,
     isZing: true
   },
   {
+    id: "zing-nQyU2qB7HzAm",
+    title: "Bông Hoa Đẹp Nhất",
+    artist: "Quân A.P",
+    mood: "V-Pop Ballad",
+    url: "/music/nQyU2qB7HzAm.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/f/8/1/e/f81efd92fa9a3d52eb37f3b867ab9d32.jpg",
+    duration: 315,
+    isZing: true
+  },
+  {
+    id: "zing-s9QHKhKUxobT",
+    title: "Dấu Mưa",
+    artist: "Trung Quân Idol",
+    mood: "V-Pop Sâu lắng",
+    url: "/music/s9QHKhKUxobT.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/covers/5/f/5f732a84bfba6ba0230e11ef4e49ba38_1392691168.jpg",
+    duration: 260,
+    isZing: true
+  },
+  {
+    id: "zing-5PNeEpbklz45",
+    title: "Anh Nhà Ở Đâu Thế",
+    artist: "AMEE",
+    mood: "V-Pop Dễ thương",
+    url: "/music/5PNeEpbklz45.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/a/6/d/e/a6dede6164a8a387fccdd728af1dfd9f.jpg",
+    duration: 205,
+    isZing: true
+  },
+  {
+    id: "zing-oNgkIkMBqWIM",
+    title: "Mượn Rượu Tỏ Tình",
+    artist: "BigDaddy, Emily",
+    mood: "V-Pop Sôi động",
+    url: "/music/oNgkIkMBqWIM.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/9/0/e/8/90e8e45930e5284bcb9950e2da970c57.jpg",
+    duration: 198,
+    isZing: true
+  },
+  {
+    id: "zing-BQfYy9h2OKFO",
+    title: "Waiting For You",
+    artist: "MONO, Onionn",
+    mood: "V-Pop Hot Hit",
+    url: "/music/BQfYy9h2OKFO.mp3",
+    thumbnail: "https://photo-resize-zmp3.zmdcdn.me/w240_r1x1_jpeg/cover/d/0/2/8/d02871d7681711bb25fb7cf1ec1a97c8.jpg",
+    duration: 266,
+    isZing: true
+  }
+];
+
+export const DEFAULT_PLAYLIST: MusicTrack[] = [
+  ...VPOP_FEATURED_TRACKS,
+  {
     id: "track-1",
     title: "Giai Điệu Acoustic Tình Yêu",
     artist: "Acoustic Romantic",
-    mood: "Lãng mạn",
+    mood: "Nhạc không lời",
     url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
   },
   {
@@ -545,20 +689,6 @@ export const DEFAULT_PLAYLIST: MusicTrack[] = [
     artist: "Lofi Peace",
     mood: "Bình yên",
     url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
-  },
-  {
-    id: "track-3",
-    title: "Hoàng Hôn Êm Đềm",
-    artist: "Piano & Guitar",
-    mood: "Thư giãn",
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
-  },
-  {
-    id: "track-4",
-    title: "Khúc Ca Bên Biển Chiều",
-    artist: "Soft Melody",
-    mood: "Bình yên",
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3"
   }
 ];
 

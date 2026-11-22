@@ -24,14 +24,18 @@ import {
   RefreshCw,
   GripVertical,
   Move,
-  Upload
+  Upload,
+  Flame,
+  Plus,
+  Check
 } from 'lucide-react';
-import { MusicTrack, DEFAULT_PLAYLIST } from '../types';
+import { MusicTrack, DEFAULT_PLAYLIST, VPOP_FEATURED_TRACKS } from '../types';
 import { extractYouTubeId, getYouTubeVideoInfoClient } from '../utils/youtube';
 import {
   getStoredPlaylist,
   savePlaylistBoth,
-  subscribeToSharedPlaylist
+  subscribeToSharedPlaylist,
+  mergeVpopTracksIntoPlaylist
 } from '../services/storage';
 import {
   isCloudMediaUrl,
@@ -110,8 +114,8 @@ const MusicPlayerInner: React.FC = () => {
   const [trackToDelete, setTrackToDelete] = useState<{ id: string; title: string } | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  // Tab thêm nhạc: YouTube | Tải từ máy | MP3 thủ công | Zing MP3
-  const [activeAddTab, setActiveAddTab] = useState<'youtube' | 'upload' | 'manual' | 'zing'>('youtube');
+  // Tab thêm nhạc: Kho V-Pop | YouTube | Tải từ máy | MP3 thủ công | Zing MP3
+  const [activeAddTab, setActiveAddTab] = useState<'vpop' | 'youtube' | 'upload' | 'manual' | 'zing'>('vpop');
 
   // YouTube Music state
   const [youtubeInput, setYoutubeInput] = useState('');
@@ -509,11 +513,65 @@ const MusicPlayerInner: React.FC = () => {
     handleNextRef.current = handleNext;
   }, [handleNext]);
 
-  // 1. TỰ ĐỘNG ĐỒNG BỘ PLAYLIST THỜI GIAN THỰC TỪ CLOUD FIRESTORE
+  // 1. TỰ ĐỘNG ĐỒNG BỘ PLAYLIST THỜI GIAN THỰC TỪ CLOUD FIRESTORE + NẠP GÓI 16 BÀI V-POP MỘT LẦN (GIỮ NGUYÊN BÀI TỰ THÊM)
   useEffect(() => {
+    const VPOP_PACK_FLAG = 'goc_nho_vpop_pack_v1';
+    let hasAttemptedCloudMerge = false;
+
+    const applyVpopPackIfNeeded = (tracks: MusicTrack[]): { next: MusicTrack[]; changed: boolean } => {
+      let alreadyApplied = false;
+      try {
+        alreadyApplied = localStorage.getItem(VPOP_PACK_FLAG) === '1';
+      } catch {}
+
+      if (alreadyApplied) {
+        return { next: tracks, changed: false };
+      }
+
+      const { tracks: merged, addedCount } = mergeVpopTracksIntoPlaylist(tracks);
+      try {
+        localStorage.setItem(VPOP_PACK_FLAG, '1');
+      } catch {}
+      return { next: merged, changed: addedCount > 0 };
+    };
+
+    // Kiểm tra nạp ngay trên dữ liệu cục bộ ban đầu
+    const localInitial = sanitizePlaylistTracks(getStoredPlaylist());
+    const localMerged = applyVpopPackIfNeeded(localInitial);
+    if (localMerged.changed) {
+      setPlaylist(localMerged.next);
+      savePlaylistBoth(localMerged.next).catch(() => {});
+    }
+
     const unsubscribe = subscribeToSharedPlaylist((sharedTracks) => {
       if (sharedTracks && sharedTracks.length > 0) {
         const clean = sanitizePlaylistTracks(sharedTracks);
+        if (!hasAttemptedCloudMerge) {
+          hasAttemptedCloudMerge = true;
+          const missingVpopCount = VPOP_FEATURED_TRACKS.filter(
+            (v) => !clean.some((t) => t.id === v.id || t.url === v.url)
+          ).length;
+          let alreadyApplied = false;
+          try {
+            alreadyApplied = localStorage.getItem(VPOP_PACK_FLAG) === '1';
+          } catch {}
+
+          // Nếu Cloud playlist vẫn là bản cũ chưa có gói V-Pop (thiếu >= 12 bài V-Pop gốc), tự động gộp vào giữ nguyên bài tự thêm
+          if (!alreadyApplied || missingVpopCount >= 12) {
+            const { tracks: merged, addedCount } = mergeVpopTracksIntoPlaylist(clean);
+            try {
+              localStorage.setItem(VPOP_PACK_FLAG, '1');
+            } catch {}
+            setPlaylist(merged);
+            setCurrentTrackIndex((prev) => (prev >= merged.length ? 0 : prev));
+            setIsCloudSynced(true);
+            if (addedCount > 0) {
+              savePlaylistBoth(merged).catch(() => {});
+            }
+            return;
+          }
+        }
+
         setPlaylist(clean);
         setCurrentTrackIndex((prev) => (prev >= clean.length ? 0 : prev));
         setIsCloudSynced(true);
@@ -1081,7 +1139,39 @@ const MusicPlayerInner: React.FC = () => {
     showNotice(`🗑️ Đã xóa "${trackTitle}" và đồng bộ trên mọi thiết bị!`, 3000);
   };
 
-  // Thực hiện khôi phục 6 bài hát gốc ban đầu
+  // Thêm hoặc phát ngay 1 bài từ kho V-Pop nổi tiếng
+  const handleSelectOrAddVpopTrack = async (vpopTrack: MusicTrack) => {
+    const existingIdx = playlist.findIndex((t) => t.id === vpopTrack.id || t.url === vpopTrack.url);
+    if (existingIdx !== -1) {
+      consecutiveErrorsRef.current = 0;
+      setCurrentTrackIndex(existingIdx);
+      setShowPlaylistModal(false);
+      playTrackDirect(playlist[existingIdx], true);
+      return;
+    }
+
+    const updated = [vpopTrack, ...playlist];
+    setPlaylist(updated);
+    setCurrentTrackIndex(0);
+    setShowPlaylistModal(false);
+    playTrackDirect(vpopTrack, true);
+    await savePlaylistBoth(updated);
+    showNotice(`🔥 Đã thêm "${vpopTrack.title}" vào danh sách & đồng bộ mọi máy!`);
+  };
+
+  // Nạp toàn bộ 16 bài V-Pop nổi tiếng vào danh sách phát (không xóa bài tự thêm)
+  const handleAddAllVpopTracks = async () => {
+    const { tracks: merged, addedCount } = mergeVpopTracksIntoPlaylist(playlist);
+    setPlaylist(merged);
+    await savePlaylistBoth(merged);
+    if (addedCount > 0) {
+      showNotice(`🔥 Đã thêm ${addedCount} bài V-Pop nổi tiếng & đồng bộ mọi thiết bị!`, 3500);
+    } else {
+      showNotice(`✨ Danh sách của hai bạn đã có đủ cả ${VPOP_FEATURED_TRACKS.length} bài V-Pop rồi!`, 3000);
+    }
+  };
+
+  // Thực hiện khôi phục danh sách bài hát V-Pop & Acoustic mặc định
   const confirmResetPlaylist = async () => {
     setPlaylist(DEFAULT_PLAYLIST);
     await savePlaylistBoth(DEFAULT_PLAYLIST);
@@ -1090,7 +1180,7 @@ const MusicPlayerInner: React.FC = () => {
     playTrackDirect(DEFAULT_PLAYLIST[0], isPlayingRef.current);
 
     setShowResetConfirm(false);
-    showNotice('✨ Đã khôi phục 6 bài hát gốc trên mọi thiết bị!', 3000);
+    showNotice(`✨ Đã khôi phục ${DEFAULT_PLAYLIST.length} bài hát V-Pop & Acoustic mặc định!`, 3000);
   };
 
   const handleAudioEnded = () => {
@@ -1503,16 +1593,28 @@ const MusicPlayerInner: React.FC = () => {
                 type="button"
                 onClick={() => setShowResetConfirm(true)}
                 className="flex items-center gap-1 text-[#D98A76] hover:text-[#C87D55] font-medium hover:underline transition-all cursor-pointer"
-                title="Khôi phục lại 6 bài hát gốc ban đầu"
+                title={`Khôi phục lại ${DEFAULT_PLAYLIST.length} bài hát V-Pop & Acoustic mặc định`}
               >
                 <RotateCcw className="w-3 h-3" />
                 <span>Khôi phục bài gốc</span>
               </button>
             </div>
 
-            {/* PHẦN THÊM BÀI HÁT: YOUTUBE | TẢI TỪ MÁY | MP3 THỦ CÔNG | ZING MP3 */}
+            {/* PHẦN THÊM BÀI HÁT: NHẠC V-POP | YOUTUBE | TẢI TỪ MÁY | MP3 THỦ CÔNG | ZING MP3 */}
             <div className="pt-3 border-t border-[#8C6D58]/10 mt-2">
               <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveAddTab('vpop')}
+                  className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                    activeAddTab === 'vpop'
+                      ? 'bg-gradient-to-r from-[#E8A598] to-[#D98A76] text-white shadow-2xs'
+                      : 'bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28]'
+                  }`}
+                >
+                  <Flame className="w-3.5 h-3.5" />
+                  <span>Nhạc V-Pop ({VPOP_FEATURED_TRACKS.length})</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('youtube')}
@@ -1535,7 +1637,7 @@ const MusicPlayerInner: React.FC = () => {
                   }`}
                 >
                   <Upload className="w-3 h-3" />
-                  <span>Tải nhạc từ máy</span>
+                  <span>Tải từ máy</span>
                 </button>
                 <button
                   type="button"
@@ -1563,7 +1665,77 @@ const MusicPlayerInner: React.FC = () => {
                 </button>
               </div>
 
-              {activeAddTab === 'upload' ? (
+              {activeAddTab === 'vpop' ? (
+                /* TAB KHO NHẠC V-POP NỔI TIẾNG (MP3 CHÍNH CHỦ PHÁT MƯỢT 100% TRÊN IPHONE & WEB) */
+                <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#E8A598]/40 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-[#3D2E28] flex items-center gap-1">
+                      <Flame className="w-3.5 h-3.5 text-[#D98A76]" />
+                      <span>Tuyển tập {VPOP_FEATURED_TRACKS.length} bản hit V-Pop lãng mạn:</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddAllVpopTracks}
+                      className="text-[10px] font-semibold px-2 py-1 rounded-full bg-[#E8A598] hover:bg-[#D98A76] text-white transition-all cursor-pointer shrink-0"
+                    >
+                      + Nạp tất cả
+                    </button>
+                  </div>
+                  <div className="space-y-1.5 max-h-[156px] overflow-y-auto pr-1">
+                    {VPOP_FEATURED_TRACKS.map((track) => {
+                      const inPlaylist = playlist.some((t) => t.id === track.id || t.url === track.url);
+                      return (
+                        <div
+                          key={track.id}
+                          onClick={() => handleSelectOrAddVpopTrack(track)}
+                          className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-white hover:bg-[#FFF8F4] border border-[#8C6D58]/10 cursor-pointer transition-all"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {track.thumbnail ? (
+                              <img
+                                src={track.thumbnail}
+                                alt=""
+                                className="w-7 h-7 rounded-lg object-cover shrink-0 border border-[#8C6D58]/15"
+                              />
+                            ) : (
+                              <div className="w-7 h-7 rounded-lg bg-[#F9F6F0] flex items-center justify-center shrink-0">
+                                <Music className="w-3.5 h-3.5 text-[#D98A76]" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-semibold text-[#3D2E28] truncate">
+                                {track.title}
+                              </div>
+                              <div className="text-[10px] text-[#8C6D58] truncate">
+                                {track.artist}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5 shrink-0 ${
+                              inPlaylist
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-[#E8A598]/20 text-[#D98A76]'
+                            }`}
+                          >
+                            {inPlaylist ? (
+                              <>
+                                <Check className="w-2.5 h-2.5" />
+                                <span>Phát</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-2.5 h-2.5" />
+                                <span>Thêm</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : activeAddTab === 'upload' ? (
                 /* TAB TẢI FILE NHẠC TRỰC TIẾP TỪ MÁY (MP3 / M4A / WAV) */
                 <div className="bg-[#FAF7F2] p-3.5 rounded-2xl border border-emerald-200 space-y-2">
                   <div className="flex items-center justify-between">
@@ -1804,7 +1976,7 @@ const MusicPlayerInner: React.FC = () => {
                       Khôi phục bài hát gốc?
                     </h4>
                     <p className="text-xs text-[#8C6D58] mt-1">
-                      Danh sách sẽ được đặt lại về 6 giai điệu lãng mạn mặc định ban đầu trên tất cả các máy.
+                      Danh sách sẽ được đặt lại về {DEFAULT_PLAYLIST.length} bài hát V-Pop & Acoustic mặc định trên tất cả các máy.
                     </p>
                   </div>
                   <div className="flex gap-2 pt-1">

@@ -240,6 +240,32 @@ export async function uploadFileToCloudMedia(
 }
 
 /**
+ * Chuyển chuỗi data URL ảnh (base64) sang File rồi tải lên Cloud Firestore media_files
+ * Dùng để lưu album 10-30 ảnh sắc nét mà không bao giờ vượt giới hạn 1MB/tài liệu của Firestore!
+ */
+export async function uploadDataUrlToCloudMedia(
+  dataUrl: string,
+  filename = 'photo.jpg'
+): Promise<string> {
+  if (!dataUrl.startsWith('data:')) return dataUrl;
+  const commaIdx = dataUrl.indexOf(',');
+  if (commaIdx === -1) return dataUrl;
+
+  const meta = dataUrl.slice(5, commaIdx);
+  const mimeType = meta.split(';')[0] || 'image/jpeg';
+  const base64 = dataUrl.slice(commaIdx + 1);
+  const bytes = base64ToUint8Array(base64);
+  const file = new File(
+    [bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer],
+    filename,
+    { type: mimeType }
+  );
+
+  const uploaded = await uploadFileToCloudMedia(file);
+  return uploaded.mediaUrl;
+}
+
+/**
  * Chuyển đường dẫn `cloud-media://<id>` thành blob URL phát được ngay trong <video> / <audio>
  * Tự động đọc từ bộ nhớ đệm IndexedDB trước, nếu là thiết bị mới thì tải 1 lần từ Firestore rồi lưu đệm.
  */

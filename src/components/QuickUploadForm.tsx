@@ -42,7 +42,8 @@ interface QuickUploadFormProps {
   onAddMemory: (
     memory:
       | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>
-      | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>[]
+      | Omit<Memory, 'id' | 'likes' | 'isLiked' | 'createdAt'>[],
+    onProgress?: (statusText: string) => void
   ) => Promise<void> | void;
   isOpen: boolean;
   onClose: () => void;
@@ -85,6 +86,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const [caption, setCaption] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string>('Kỷ niệm');
   const [isCompressing, setIsCompressing] = useState(false);
+  const [compressProgress, setCompressProgress] = useState<{ done: number; total: number } | null>(null);
+  const [saveStatusText, setSaveStatusText] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -128,31 +131,81 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
   const activeImage = mediaMode === 'video' ? videoPosterUrl : images[activeImageIndex] || images[0] || '';
 
+  // Nén ảnh theo từng cặp 2 ảnh/lượt để tránh tràn RAM trên iPhone Safari khi chọn 10-30 ảnh cùng lúc
+  const compressFilesInBatches = async (files: File[]) => {
+    const total = files.length;
+    if (total === 0) return;
+
+    setValidationError(null);
+    setIsCompressing(true);
+    setCompressProgress({ done: 0, total });
+
+    const succeeded: string[] = [];
+    let failedCount = 0;
+    let doneCount = 0;
+    const CONCURRENCY = 2;
+
+    try {
+      for (let i = 0; i < total; i += CONCURRENCY) {
+        const batch = files.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(
+          batch.map(async (file) => {
+            try {
+              // Tối ưu kích thước và chất lượng gọn nhẹ hơn khi đăng nhiều ảnh cùng lúc
+              const maxWidth = total >= 8 ? 860 : 960;
+              const quality = total >= 8 ? 0.72 : 0.76;
+              return await compressImageFile(file, maxWidth, quality);
+            } catch (err) {
+              console.warn('Bỏ qua ảnh lỗi khi nén:', file.name, err);
+              failedCount += 1;
+              return null;
+            } finally {
+              doneCount += 1;
+              setCompressProgress({ done: doneCount, total });
+            }
+          })
+        );
+
+        const validBatch = results.filter((item): item is string => Boolean(item));
+        if (validBatch.length > 0) {
+          succeeded.push(...validBatch);
+          setImages((prev) => {
+            const next = [...prev, ...validBatch];
+            if (prev.length === 0) setActiveImageIndex(0);
+            return next;
+          });
+        }
+
+        // Nhường 1 frame để trình duyệt di động giải phóng bộ nhớ canvas giữa các lượt nén
+        await new Promise((resolve) => window.setTimeout(resolve, 25));
+      }
+
+      if (succeeded.length === 0) {
+        setValidationError(
+          'Không thể đọc các ảnh đã chọn từ thiết bị. Bạn hãy thử chọn ảnh định dạng JPG/PNG/HEIC khác nhé!'
+        );
+      } else if (failedCount > 0) {
+        setValidationError(
+          `Đã tối ưu thành công ${succeeded.length}/${total} ảnh (${failedCount} ảnh không đọc được đã được bỏ qua).`
+        );
+      }
+    } catch (err: any) {
+      console.warn('Lỗi nén ảnh hàng loạt:', err);
+      setValidationError(err?.message || 'Không thể xử lý một số ảnh từ thiết bị. Bạn vui lòng thử lại nhé!');
+    } finally {
+      setIsCompressing(false);
+      setCompressProgress(null);
+    }
+  };
+
   // Xử lý khi người dùng chọn nhiều file ảnh từ máy / điện thoại (đặc biệt tối ưu hóa iPhone)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    setValidationError(null);
-    setIsCompressing(true);
-
-    try {
-      const compressedList = await Promise.all(
-        files.map((file) => compressImageFile(file, 960, 0.75))
-      );
-      setImages((prev) => {
-        const next = [...prev, ...compressedList];
-        if (prev.length === 0) setActiveImageIndex(0);
-        return next;
-      });
-    } catch (err: any) {
-      console.warn('Lỗi nén ảnh:', err);
-      setValidationError(err?.message || 'Không thể xử lý một số ảnh từ thiết bị. Bạn vui lòng thử lại nhé!');
-    } finally {
-      setIsCompressing(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+    await compressFilesInBatches(files);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -168,28 +221,12 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    setValidationError(null);
     const files = Array.from(e.dataTransfer.files).filter(
       (f) => f.type.startsWith('image/') || f.name.match(/\.(jpg|jpeg|png|webp|heic|heif)$/i)
     );
     if (files.length === 0) return;
 
-    setIsCompressing(true);
-    try {
-      const compressedList = await Promise.all(
-        files.map((file) => compressImageFile(file, 960, 0.75))
-      );
-      setImages((prev) => {
-        const next = [...prev, ...compressedList];
-        if (prev.length === 0) setActiveImageIndex(0);
-        return next;
-      });
-    } catch (err: any) {
-      console.warn('Lỗi khi nén ảnh kéo thả:', err);
-      setValidationError(err?.message || 'Không thể xử lý ảnh kéo thả.');
-    } finally {
-      setIsCompressing(false);
-    }
+    await compressFilesInBatches(files);
   };
 
   // Chọn ảnh từ Kho ảnh mẫu (cho phép chọn thêm nhiều ảnh)
@@ -418,27 +455,33 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
         const safeDuration =
           Number.isFinite(videoDuration) && videoDuration > 0 ? Math.round(videoDuration) : undefined;
 
-        await onAddMemory({
-          mediaType: 'video',
-          videoUrl: finalVideoUrl,
-          videoDuration: safeDuration,
-          imageUrl: finalPoster,
-          date: memoryDate,
-          location: memoryLocation,
-          caption: caption.trim(),
-          tag: memoryTag
-        });
+        await onAddMemory(
+          {
+            mediaType: 'video',
+            videoUrl: finalVideoUrl,
+            videoDuration: safeDuration,
+            imageUrl: finalPoster,
+            date: memoryDate,
+            location: memoryLocation,
+            caption: caption.trim(),
+            tag: memoryTag
+          },
+          (status) => setSaveStatusText(status)
+        );
       } else if (uploadMode === 'album' || images.length === 1) {
-        // 1 bài viết album có nhiều ảnh
-        await onAddMemory({
-          mediaType: 'image',
-          imageUrl: images[0],
-          images: images,
-          date: memoryDate,
-          location: memoryLocation,
-          caption: caption.trim(),
-          tag: memoryTag
-        });
+        // 1 bài viết album có nhiều ảnh (tự động chia mảnh lưu Cloud Media nếu >= 5 ảnh)
+        await onAddMemory(
+          {
+            mediaType: 'image',
+            imageUrl: images[0],
+            images: images,
+            date: memoryDate,
+            location: memoryLocation,
+            caption: caption.trim(),
+            tag: memoryTag
+          },
+          (status) => setSaveStatusText(status)
+        );
       } else {
         // Đăng thành nhiều bài viết riêng biệt (mỗi ảnh 1 bài)
         const list = images.map((imgUrl, i) => ({
@@ -450,7 +493,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
           caption: images.length > 1 ? `${caption.trim()} (Ảnh #${i + 1})` : caption.trim(),
           tag: memoryTag
         }));
-        await onAddMemory(list);
+        await onAddMemory(list, (status) => setSaveStatusText(status));
       }
 
       confetti({
@@ -476,6 +519,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       );
     } finally {
       setIsSubmitting(false);
+      setSaveStatusText('');
       setVideoUploadProgress(0);
     }
   };
@@ -905,6 +949,25 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                   </button>
                 </div>
 
+                {/* Tiến trình nén ảnh khi chọn thêm nhiều ảnh */}
+                {isCompressing && (
+                  <div className="bg-[#FAF7F2] px-3 py-2 rounded-xl border border-[#E8A598]/40 text-xs text-[#D98A76] font-medium flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                      <span>
+                        {compressProgress
+                          ? `Đang tối ưu ảnh ${compressProgress.done}/${compressProgress.total}...`
+                          : 'Đang tối ưu dung lượng ảnh...'}
+                      </span>
+                    </span>
+                    {compressProgress && (
+                      <span className="font-bold">
+                        {Math.round((compressProgress.done / Math.max(1, compressProgress.total)) * 100)}%
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Tùy chọn cách đăng khi chọn từ 2 ảnh trở lên */}
                 {images.length > 1 && (
                   <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#8C6D58]/15 space-y-2 animate-fadeIn">
@@ -981,7 +1044,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                   <Camera className="w-6 h-6" />
                 </div>
                 <p className="text-xs sm:text-sm font-semibold text-[#3D2E28]">
-                  Chạm để chọn ảnh từ iPhone / Android / Máy tính (hỗ trợ chọn nhiều ảnh)
+                  Chạm để chọn ảnh từ iPhone / Android / Máy tính (hỗ trợ chọn 10-30 ảnh cùng lúc)
                 </p>
                 <p className="text-[11px] text-[#8C6D58] mt-1">
                   💡 Bạn có thể chọn <span className="text-[#D98A76] font-semibold">nhiều ảnh cùng lúc</span> từ thư viện hoặc chụp ảnh mới
@@ -989,7 +1052,11 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 {isCompressing && (
                   <div className="mt-2 text-xs text-[#D98A76] font-medium flex items-center justify-center gap-1.5 animate-pulse">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Đang xử lý và tối ưu dung lượng ảnh...</span>
+                    <span>
+                      {compressProgress
+                        ? `Đang tối ưu ảnh ${compressProgress.done}/${compressProgress.total}...`
+                        : 'Đang xử lý và tối ưu dung lượng ảnh...'}
+                    </span>
                   </div>
                 )}
               </label>
@@ -1263,7 +1330,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                   <span>
                     {mediaMode === 'video' && videoUploadProgress > 0
                       ? `Đang tải video (${videoUploadProgress}%)...`
-                      : 'Đang lưu kỷ niệm...'}
+                      : saveStatusText || 'Đang lưu kỷ niệm...'}
                   </span>
                 </>
               ) : (

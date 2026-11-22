@@ -10,6 +10,7 @@ import {
   DEFAULT_BG_SETTINGS,
   INITIAL_MEMORIES,
   DEFAULT_PLAYLIST,
+  VPOP_FEATURED_TRACKS,
   INITIAL_DIARY_ENTRIES
 } from '../types';
 import { db } from '../firebase';
@@ -23,6 +24,7 @@ import {
 } from 'firebase/firestore';
 import {
   uploadFileToCloudMedia,
+  uploadDataUrlToCloudMedia,
   deleteCloudMedia,
   isCloudMediaUrl,
   MAX_CLOUD_MEDIA_BYTES
@@ -116,6 +118,24 @@ export const sanitizePlaylistTracks = (tracks: MusicTrack[]): { tracks: MusicTra
   });
 
   return { tracks: sanitized, repaired };
+};
+
+export const mergeVpopTracksIntoPlaylist = (
+  existing: MusicTrack[]
+): { tracks: MusicTrack[]; addedCount: number } => {
+  const existingIds = new Set(existing.map((t) => t.id));
+  const existingUrls = new Set(existing.map((t) => t.url));
+  const missingVpop = VPOP_FEATURED_TRACKS.filter(
+    (v) => !existingIds.has(v.id) && !existingUrls.has(v.url)
+  );
+  if (missingVpop.length === 0) {
+    return { tracks: existing, addedCount: 0 };
+  }
+  // Đưa các bài V-Pop mới vào đầu danh sách để bấm là nghe được ngay, vẫn giữ nguyên mọi bài cũ của người dùng
+  return {
+    tracks: [...missingVpop, ...existing],
+    addedCount: missingVpop.length
+  };
 };
 
 export const getStoredPlaylist = (): MusicTrack[] => {
@@ -265,7 +285,19 @@ export const saveMemoriesToStorage = (memories: Memory[]): void => {
   try {
     localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories));
   } catch (error) {
-    console.warn('Lỗi khi lưu memories vào localStorage:', error);
+    // Khi lưu nhiều ảnh (10+ ảnh), localStorage (giới hạn ~5MB) có thể đầy -> lưu bản nhẹ giữ metadata & ảnh bìa, dữ liệu đầy đủ đã có trên Firestore & IndexedDB
+    try {
+      const compact = memories.slice(0, 40).map((m) => ({
+        ...m,
+        images: m.images && m.images.length > 1
+          ? m.images.map((img, i) => (i === 0 || !img.startsWith('data:') ? img : ''))
+              .filter(Boolean)
+          : m.images
+      }));
+      localStorage.setItem(MEMORIES_KEY, JSON.stringify(compact));
+    } catch {
+      console.warn('Bộ nhớ đệm trình duyệt đã đầy, dữ liệu vẫn được đồng bộ an toàn trên Cloud Firestore:', error);
+    }
   }
 };
 
@@ -347,13 +379,85 @@ export const subscribeToSharedMemories = (
   return unsubscribe;
 };
 
-export const saveSharedMemory = async (memory: Memory): Promise<boolean> => {
+/**
+ * Chuẩn bị Memory an toàn dưới giới hạn 1MB/tài liệu của Cloud Firestore:
+ * Nếu album có nhiều ảnh (5, 10, 20+ ảnh) khiến tổng dung lượng > 620KB,
+ * tự động lưu các ảnh phụ sắc nét sang Cloud Media (`cloud-media://`) + IndexedDB
+ * để tài liệu chính luôn nhẹ (~200KB) và không bao giờ báo lỗi 1MB của Firestore!
+ */
+export const prepareMemoryForCloudSave = async (
+  memory: Memory,
+  onImageOffloadProgress?: (done: number, total: number) => void
+): Promise<Memory> => {
+  if (!memory.images || memory.images.length <= 1) {
+    return memory;
+  }
+
+  const inlineBytes =
+    (memory.imageUrl?.length || 0) +
+    memory.images.reduce((sum, img) => sum + (img?.length || 0), 0);
+
+  // Nếu tổng dung lượng vẫn gọn dưới 620KB (vd: 2-3 ảnh nhẹ) -> lưu trực tiếp trong 1 doc
+  if (inlineBytes <= 620_000) {
+    return memory;
+  }
+
+  // Luôn giữ ảnh bìa đầu tiên inline để bảng tin tải tức thì, offload các ảnh phụ data: sang cloud-media://
+  const nextImages = [...memory.images];
+  const indicesToOffload: number[] = [];
+  let runningBudget = (memory.imageUrl?.length || 0) + (nextImages[0]?.length || 0);
+
+  for (let i = 1; i < nextImages.length; i++) {
+    const img = nextImages[i];
+    if (img && img.startsWith('data:')) {
+      if (runningBudget + img.length <= 580_000) {
+        runningBudget += img.length;
+      } else {
+        indicesToOffload.push(i);
+      }
+    }
+  }
+
+  if (indicesToOffload.length === 0) {
+    return memory;
+  }
+
+  let completed = 0;
+  const concurrency = 3;
+  for (let start = 0; start < indicesToOffload.length; start += concurrency) {
+    const batch = indicesToOffload.slice(start, start + concurrency);
+    await Promise.all(
+      batch.map(async (idx) => {
+        const cloudUrl = await uploadDataUrlToCloudMedia(
+          nextImages[idx],
+          `${memory.id}-img-${idx + 1}.jpg`
+        );
+        nextImages[idx] = cloudUrl;
+        completed += 1;
+        if (onImageOffloadProgress) {
+          onImageOffloadProgress(completed, indicesToOffload.length);
+        }
+      })
+    );
+  }
+
+  return {
+    ...memory,
+    images: nextImages
+  };
+};
+
+export const saveSharedMemory = async (
+  memory: Memory,
+  onImageOffloadProgress?: (done: number, total: number) => void
+): Promise<Memory> => {
   try {
+    const prepared = await prepareMemoryForCloudSave(memory, onImageOffloadProgress);
     // Loại bỏ các trường undefined / NaN trước khi ghi vào Firestore
-    const cleanMemory = stripUndefinedFromObject(memory);
-    const memDocRef = doc(db, 'memories', memory.id);
+    const cleanMemory = stripUndefinedFromObject(prepared);
+    const memDocRef = doc(db, 'memories', prepared.id);
     await setDoc(memDocRef, cleanMemory);
-    return true;
+    return prepared;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `memories/${memory.id}`);
     throw err;
@@ -386,6 +490,29 @@ export const deleteUploadedVideoFile = async (videoUrl?: string): Promise<void> 
     });
   } catch {
     // Best-effort cleanup
+  }
+};
+
+export const deleteMemoryCloudAssets = async (memory?: Memory): Promise<void> => {
+  if (!memory) return;
+  if (memory.videoUrl) {
+    await deleteUploadedVideoFile(memory.videoUrl);
+  }
+  const cloudImageUrls = new Set<string>();
+  if (isCloudMediaUrl(memory.imageUrl)) {
+    cloudImageUrls.add(memory.imageUrl);
+  }
+  if (Array.isArray(memory.images)) {
+    for (const img of memory.images) {
+      if (isCloudMediaUrl(img)) {
+        cloudImageUrls.add(img);
+      }
+    }
+  }
+  if (cloudImageUrls.size > 0) {
+    await Promise.all(
+      Array.from(cloudImageUrls).map((url) => deleteCloudMedia(url).catch(() => {}))
+    );
   }
 };
 
@@ -668,11 +795,33 @@ export const subscribeToSharedDiary = (
  * Đảm bảo dung lượng base64 luôn < 180KB, không bị vượt quá giới hạn 1MB của tài liệu Firestore
  * và không bị tràn bộ nhớ Safari trên điện thoại!
  */
-export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): Promise<string> => {
+export const compressImageFile = (file: File, maxWidth = 960, quality = 0.74): Promise<string> => {
   return new Promise((resolve, reject) => {
-    // 1. Dùng URL.createObjectURL để tránh tốn hàng chục MB RAM của trình duyệt di động
+    let settled = false;
     let objectUrl = '';
     let isObjectUrlUsed = false;
+
+    const timeoutId = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanUp();
+        reject(new Error(`Ảnh "${file.name || 'từ máy'}" xử lý quá lâu. Bạn hãy thử chọn lại ảnh này nhé!`));
+      }
+    }, 18000);
+
+    const finishResolve = (val: string) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(val);
+    };
+
+    const finishReject = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      reject(err);
+    };
 
     try {
       objectUrl = URL.createObjectURL(file);
@@ -686,6 +835,7 @@ export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): P
         try {
           URL.revokeObjectURL(objectUrl);
         } catch {}
+        objectUrl = '';
       }
     };
 
@@ -696,11 +846,10 @@ export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): P
 
         if (!width || !height) {
           cleanUp();
-          reject(new Error('Kích thước ảnh không hợp lệ'));
+          finishReject(new Error('Kích thước ảnh không hợp lệ'));
           return;
         }
 
-        // Giới hạn kích thước tối đa 960px để ảnh sắc nét trên màn hình Retina mà dung lượng cực nhẹ
         const maxDim = maxWidth;
         if (width > maxDim || height > maxDim) {
           if (width >= height) {
@@ -718,23 +867,21 @@ export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): P
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
+          canvas.width = 0;
+          canvas.height = 0;
           cleanUp();
-          reject(new Error('Không thể khởi tạo bộ xử lý ảnh 2D'));
+          finishReject(new Error('Không thể khởi tạo bộ xử lý ảnh 2D'));
           return;
         }
 
-        // Vẽ ảnh lên canvas với làm mịn chất lượng cao
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
         cleanUp();
 
-        // Sử dụng image/jpeg chuẩn - tương thích 100% mọi dòng iPhone, iPad, Android & Web
         let outputUrl = canvas.toDataURL('image/jpeg', quality);
 
-        // Nếu chuỗi base64 vẫn lớn hơn 200KB (~150KB nhị phân), nén thêm một bước nữa
-        // để đảm bảo khi đăng Album 3-5 ảnh không bao giờ vượt quá 1MB của Firestore
-        if (outputUrl.length > 200000) {
+        if (outputUrl.length > 180000) {
           const secondCanvas = document.createElement('canvas');
           const scale = 0.8;
           secondCanvas.width = Math.round(width * scale);
@@ -744,14 +891,19 @@ export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): P
             secondCtx.imageSmoothingEnabled = true;
             secondCtx.imageSmoothingQuality = 'medium';
             secondCtx.drawImage(canvas, 0, 0, secondCanvas.width, secondCanvas.height);
-            outputUrl = secondCanvas.toDataURL('image/jpeg', 0.68);
+            outputUrl = secondCanvas.toDataURL('image/jpeg', 0.66);
           }
+          // Giải phóng ngay RAM canvas trên iPhone Safari khi nén 10-20 ảnh liên tiếp
+          secondCanvas.width = 0;
+          secondCanvas.height = 0;
         }
 
-        resolve(outputUrl);
+        canvas.width = 0;
+        canvas.height = 0;
+        finishResolve(outputUrl);
       } catch (err) {
         cleanUp();
-        reject(err);
+        finishReject(err);
       }
     };
 
@@ -764,19 +916,19 @@ export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): P
 
     img.onerror = () => {
       cleanUp();
-      // Thử đọc bằng FileReader nếu ObjectURL bị lỗi
       try {
         const reader = new FileReader();
         reader.onload = (e) => {
           const fallbackImg = new Image();
           fallbackImg.onload = () => processImageElement(fallbackImg);
-          fallbackImg.onerror = () => reject(new Error('Không thể đọc file ảnh này trên thiết bị.'));
+          fallbackImg.onerror = () =>
+            finishReject(new Error(`Không thể đọc file ảnh "${file.name || ''}" trên thiết bị.`));
           fallbackImg.src = e.target?.result as string;
         };
-        reader.onerror = () => reject(new Error('Lỗi khi đọc file ảnh từ máy.'));
+        reader.onerror = () => finishReject(new Error('Lỗi khi đọc file ảnh từ máy.'));
         reader.readAsDataURL(file);
       } catch {
-        reject(new Error('Thiết bị không hỗ trợ định dạng ảnh này.'));
+        finishReject(new Error('Thiết bị không hỗ trợ định dạng ảnh này.'));
       }
     };
 
@@ -787,7 +939,7 @@ export const compressImageFile = (file: File, maxWidth = 960, quality = 0.75): P
       reader.onload = (e) => {
         img.src = e.target?.result as string;
       };
-      reader.onerror = reject;
+      reader.onerror = finishReject;
       reader.readAsDataURL(file);
     }
   });
