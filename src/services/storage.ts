@@ -13,7 +13,7 @@ import {
   VPOP_FEATURED_TRACKS,
   INITIAL_DIARY_ENTRIES
 } from '../types';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import {
   doc,
   collection,
@@ -48,8 +48,42 @@ export enum OperationType {
   WRITE = 'write',
 }
 
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  console.warn(`[Firestore ${operationType} on ${path}]:`, error);
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email
+        })) || []
+    },
+    operationType,
+    path
+  };
+  console.warn('Firestore Error:', JSON.stringify(errInfo));
 }
 
 /* =========================================================================
@@ -231,6 +265,12 @@ export const subscribeToSharedPlaylist = (
         }
       }
 
+      // Nếu đang offline (dữ liệu từ cache trống), giữ nguyên playlist cục bộ, không ghi đè lên Cloud
+      if (snapshot.metadata.fromCache) {
+        onUpdate(getStoredPlaylist());
+        return;
+      }
+
       // Nếu tài liệu trên Cloud chưa có hoặc rỗng, đồng bộ từ local lên cloud nếu có bài
       try {
         const localPlaylist = getStoredPlaylist();
@@ -330,6 +370,12 @@ export const subscribeToSharedMemories = (
         localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
         saveMemoriesToStorage(loaded);
         onUpdate(loaded);
+        return;
+      }
+
+      // Nếu đang offline và cache trống, giữ nguyên bộ nhớ cục bộ, không seed dữ liệu mẫu
+      if (snapshot.metadata.fromCache) {
+        onUpdate(getStoredMemories());
         return;
       }
 
@@ -629,10 +675,16 @@ export const subscribeToSharedCoupleInfo = (
             startDate: data.startDate || DEFAULT_COUPLE_INFO.startDate,
             anniversaryNote: data.anniversaryNote || DEFAULT_COUPLE_INFO.anniversaryNote
           };
-          localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
+          try {
+            localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
+          } catch {}
           onUpdate(info);
           return;
         }
+      }
+
+      if (snapshot.metadata.fromCache) {
+        return;
       }
 
       // Khởi tạo nếu chưa có trên Cloud
@@ -702,7 +754,9 @@ export const subscribeToSharedBgSettings = (
       if (snapshot.exists()) {
         const data = snapshot.data() as BackgroundSettings;
         if (data && data.type) {
-          localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(data));
+          try {
+            localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(data));
+          } catch {}
           onUpdate(data);
         }
       }
@@ -766,6 +820,11 @@ export const subscribeToSharedDiary = (
           onUpdate(data.entries);
           return;
         }
+      }
+
+      if (snapshot.metadata.fromCache) {
+        onUpdate(getStoredDiaryEntries());
+        return;
       }
 
       // Khởi tạo trên Cloud nếu chưa có

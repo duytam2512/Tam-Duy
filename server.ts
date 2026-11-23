@@ -1,7 +1,7 @@
 import express from "express";
 import http from "http";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -489,10 +489,11 @@ app.get("/api/audio/proxy", async (req, res) => {
 // Middleware phân tích JSON với dung lượng đủ lớn cho ảnh base64
 app.use(express.json({ limit: "15mb" }));
 
-// Khởi tạo Gemini SDK trên server-side
+// Khởi tạo Gemini SDK trên server-side (kèm timeout 15s tránh treo giao diện)
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
   httpOptions: {
+    timeout: 15000,
     headers: {
       "User-Agent": "aistudio-build",
     },
@@ -587,15 +588,19 @@ Chỉ trả về duy nhất chuỗi JSON hợp lệ (không markdown thừa):
       parts.push({ text: promptText });
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: parts.length === 1 ? parts[0].text : parts,
+        model: "gemini-4-hydrogen",
+        contents: parts.length === 1 ? parts[0].text : { parts },
         config: {
           responseMimeType: "application/json",
-          temperature: 0.95,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         },
       });
 
-      const textOutput = (response.text ?? "").trim();
+      const rawOutput = (response.text ?? "").trim();
+      const textOutput = rawOutput
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/, "")
+        .trim();
       if (textOutput) {
         const parsed = JSON.parse(textOutput);
         if (Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0) {

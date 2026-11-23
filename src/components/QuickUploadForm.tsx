@@ -24,7 +24,8 @@ import {
   Type,
   Video,
   Film,
-  Link2
+  Link2,
+  SlidersHorizontal
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Memory, POPULAR_TAGS, SAMPLE_PHOTO_LIBRARY, CoupleInfo, CaptionFont, FONT_OPTIONS } from '../types';
@@ -37,6 +38,12 @@ import {
   getVideoEmbedInfo
 } from '../services/storage';
 import { generateSmartCaptions, extractContextualEmojis, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
+import { PhotoEditorModal } from './PhotoEditorModal';
+import {
+  PhotoEditState,
+  DEFAULT_CROP,
+  renderEditedPhotoDataUrl
+} from '../utils/photoEditor';
 
 interface QuickUploadFormProps {
   onAddMemory: (
@@ -67,9 +74,12 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   // Chế độ đăng: Ảnh hoặc Video
   const [mediaMode, setMediaMode] = useState<'image' | 'video'>('image');
 
-  // Danh sách ảnh đã chọn (hỗ trợ chọn nhiều ảnh)
+  // Danh sách ảnh đã chọn (hỗ trợ chọn nhiều ảnh) + lưu ảnh gốc & trạng thái chỉnh sửa không mất chất lượng
   const [images, setImages] = useState<string[]>([]);
+  const [originalImages, setOriginalImages] = useState<string[]>([]);
+  const [photoEditStates, setPhotoEditStates] = useState<(PhotoEditState | null)[]>([]);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
+  const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
   const [uploadMode, setUploadMode] = useState<'album' | 'individual'>('album');
 
   // Trạng thái Video đã chọn
@@ -174,6 +184,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             if (prev.length === 0) setActiveImageIndex(0);
             return next;
           });
+          setOriginalImages((prev) => [...prev, ...validBatch]);
+          setPhotoEditStates((prev) => [...prev, ...validBatch.map(() => null)]);
         }
 
         // Nhường 1 frame để trình duyệt di động giải phóng bộ nhớ canvas giữa các lượt nén
@@ -232,13 +244,16 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   // Chọn ảnh từ Kho ảnh mẫu (cho phép chọn thêm nhiều ảnh)
   const handleSelectSample = (url: string, suggestedLocation: string) => {
     setValidationError(null);
-    setImages((prev) => {
-      if (prev.includes(url)) {
-        // Nếu đã có thì bỏ chọn
-        return prev.filter((item) => item !== url);
-      }
-      return [...prev, url];
-    });
+    const existingIdx = originalImages.indexOf(url);
+    if (existingIdx !== -1) {
+      setImages((prev) => prev.filter((_, idx) => idx !== existingIdx));
+      setOriginalImages((prev) => prev.filter((_, idx) => idx !== existingIdx));
+      setPhotoEditStates((prev) => prev.filter((_, idx) => idx !== existingIdx));
+    } else {
+      setImages((prev) => [...prev, url]);
+      setOriginalImages((prev) => [...prev, url]);
+      setPhotoEditStates((prev) => [...prev, null]);
+    }
 
     if (!location) {
       setLocation(suggestedLocation);
@@ -256,12 +271,77 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const handleRemoveImage = (indexToRemove: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    setOriginalImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    setPhotoEditStates((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   // Xóa toàn bộ ảnh đã chọn
   const handleClearAllImages = () => {
     setImages([]);
+    setOriginalImages([]);
+    setPhotoEditStates([]);
     setActiveImageIndex(0);
+    setEditingImageIndex(null);
+  };
+
+  // Lưu ảnh sau khi áp bộ lọc / cắt ảnh cho 1 ảnh hiện tại
+  const handleApplyPhotoEdit = (editedDataUrl: string, state: PhotoEditState) => {
+    if (editingImageIndex === null) return;
+    const targetIdx = editingImageIndex;
+    setImages((prev) => prev.map((img, idx) => (idx === targetIdx ? editedDataUrl : img)));
+    setPhotoEditStates((prev) => prev.map((st, idx) => (idx === targetIdx ? state : st)));
+  };
+
+  // Áp dụng cùng tông màu vintage cho toàn bộ các ảnh trong album (giữ riêng cắt/xoay của ảnh hiện tại)
+  const handleApplyFilterToAllPhotos = async (fullState: PhotoEditState) => {
+    if (editingImageIndex === null) return;
+    const activeIdx = editingImageIndex;
+    const colorOnlyState: PhotoEditState = {
+      ...fullState,
+      rotation: 0,
+      flipX: false,
+      flipY: false,
+      aspectRatio: 'free',
+      crop: { ...DEFAULT_CROP }
+    };
+
+    const nextImages = [...images];
+    const nextStates: (PhotoEditState | null)[] = [...photoEditStates];
+    const CONCURRENCY = 2;
+    for (let i = 0; i < images.length; i += CONCURRENCY) {
+      const indices = Array.from(
+        { length: Math.min(CONCURRENCY, images.length - i) },
+        (_, offset) => i + offset
+      );
+      await Promise.all(
+        indices.map(async (idx) => {
+          const sourceUrl = originalImages[idx] || images[idx];
+          const prevState = photoEditStates[idx];
+          const stateForPhoto: PhotoEditState =
+            idx === activeIdx
+              ? fullState
+              : {
+                  ...colorOnlyState,
+                  rotation: prevState?.rotation ?? 0,
+                  flipX: prevState?.flipX ?? false,
+                  flipY: prevState?.flipY ?? false,
+                  aspectRatio: prevState?.aspectRatio ?? 'free',
+                  crop: prevState?.crop ? { ...prevState.crop } : { ...DEFAULT_CROP }
+                };
+          try {
+            nextImages[idx] = await renderEditedPhotoDataUrl(sourceUrl, stateForPhoto, {
+              maxDimension: images.length >= 8 ? 900 : 1080,
+              quality: images.length >= 8 ? 0.78 : 0.84
+            });
+            nextStates[idx] = stateForPhoto;
+          } catch (err) {
+            console.warn('Không thể áp bộ lọc cho ảnh #' + (idx + 1), err);
+          }
+        })
+      );
+    }
+    setImages(nextImages);
+    setPhotoEditStates(nextStates);
   };
 
   // Xử lý chọn file video từ máy tính / iPhone / Android
@@ -505,6 +585,9 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
       // Reset form
       setImages([]);
+      setOriginalImages([]);
+      setPhotoEditStates([]);
+      setEditingImageIndex(null);
       handleClearVideo();
       setCaption('');
       setLocation('');
@@ -805,7 +888,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 max-h-48 overflow-y-auto">
                   {SAMPLE_PHOTO_LIBRARY.find((c) => c.category === activeSampleCategory)?.items.map(
                     (item) => {
-                      const isSelected = images.includes(item.url);
+                      const isSelected = originalImages.includes(item.url) || images.includes(item.url);
                       return (
                         <div
                           key={item.title}
@@ -888,17 +971,33 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                   <div className="absolute top-3 right-3 flex items-center gap-1.5">
                     <button
                       type="button"
+                      onClick={() => setEditingImageIndex(activeImageIndex)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FFFDF9]/95 hover:bg-white text-[#3D2E28] rounded-full text-xs font-bold shadow-md transition-all cursor-pointer border border-[#E8A598]/60"
+                      title="Chỉnh bộ lọc màu vintage, cân sáng & cắt ảnh"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-[#D98A76]" />
+                      <span>Chỉnh ảnh</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleRemoveImage(activeImageIndex)}
-                      className="p-1.5 bg-rose-600/80 hover:bg-rose-700 text-white rounded-full transition-all shadow-md cursor-pointer"
+                      className="p-1.5 bg-rose-600/85 hover:bg-rose-700 text-white rounded-full transition-all shadow-md cursor-pointer"
                       title="Xóa ảnh này"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/55 text-white text-[11px] rounded-lg backdrop-blur-xs flex items-center gap-1">
-                    <Check className="w-3 h-3 text-[#E8A598]" />
-                    <span>Đã tối ưu cho cả web & điện thoại</span>
+                  <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-2 pointer-events-none">
+                    <div className="px-2.5 py-1 bg-black/60 text-white text-[11px] rounded-lg backdrop-blur-xs flex items-center gap-1">
+                      <Check className="w-3 h-3 text-[#E8A598]" />
+                      <span>
+                        {originalImages[activeImageIndex] &&
+                        originalImages[activeImageIndex] !== images[activeImageIndex]
+                          ? 'Đã áp chỉnh sửa nghệ thuật'
+                          : 'Đã tối ưu cho cả web & điện thoại'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -1355,6 +1454,24 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Modal Chỉnh Sửa Ảnh Nghệ Thuật (Bộ lọc vintage, cân chỉnh màu & cắt/xoay ảnh) */}
+      {editingImageIndex !== null && images[editingImageIndex] && (
+        <PhotoEditorModal
+          isOpen={editingImageIndex !== null}
+          imageSrc={originalImages[editingImageIndex] || images[editingImageIndex]}
+          initialState={photoEditStates[editingImageIndex] || null}
+          imageLabel={
+            images.length > 1
+              ? `Ảnh ${editingImageIndex + 1} / ${images.length}`
+              : 'Ảnh kỷ niệm'
+          }
+          totalPhotosCount={images.length}
+          onClose={() => setEditingImageIndex(null)}
+          onApply={handleApplyPhotoEdit}
+          onApplyFilterToAll={images.length > 1 ? handleApplyFilterToAllPhotos : undefined}
+        />
+      )}
     </div>
   );
 };

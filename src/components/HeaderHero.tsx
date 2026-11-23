@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Heart, Calendar, Sparkles, Edit3, Clock, Share2, Download, FileCode, Palette, BookOpen, Snowflake, Film, Book, Type } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Heart, Calendar, Sparkles, Edit3, Clock, FileCode, Palette, BookOpen, Snowflake, Film, Book, Type, PartyPopper, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
 import { BrandLogo } from './BrandLogo';
 import { PWAInstallButton } from './PWAInstallButton';
+import {
+  getLoveMilestoneStatus,
+  launchMilestoneFireworks,
+  LoveMilestone
+} from '../utils/loveMilestones';
 
 interface HeaderHeroProps {
   coupleInfo: CoupleInfo;
@@ -39,13 +44,42 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<CoupleInfo>(coupleInfo);
 
-  // Tính toán thời gian yêu nhau
-  const [timeTogether, setTimeTogether] = useState({
-    days: 0,
-    hours: 0,
-    minutes: 0,
-    seconds: 0
-  });
+  // Phân tích chuỗi ngày YYYY-MM-DD theo múi giờ địa phương (tránh lệch 7 giờ ở Việt Nam UTC+7)
+  const parseLocalStartDate = useCallback((dateStr: string): Date | null => {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    const match = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      const day = Number(match[3]);
+      const d = new Date(year, month, day, 0, 0, 0, 0);
+      return Number.isFinite(d.getTime()) ? d : null;
+    }
+    const parsed = new Date(dateStr);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }, []);
+
+  // Tính toán thời gian yêu nhau (khởi tạo ngay để nhận diện cột mốc không bị trễ 1 frame)
+  const computeTimeTogether = useCallback((startDateStr: string) => {
+    const parsed = parseLocalStartDate(startDateStr);
+    const start = parsed ? parsed.getTime() : NaN;
+    if (!Number.isFinite(start)) {
+      return { days: 0, hours: 0, minutes: 0, seconds: 0 };
+    }
+    const diff = Math.max(0, Date.now() - start);
+    return {
+      days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+      hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+      minutes: Math.floor((diff / (1000 * 60)) % 60),
+      seconds: Math.floor((diff / 1000) % 60)
+    };
+  }, [parseLocalStartDate]);
+
+  const [timeTogether, setTimeTogether] = useState(() => computeTimeTogether(coupleInfo.startDate));
+  const [celebratingMilestone, setCelebratingMilestone] = useState<LoveMilestone | null>(null);
+  const [isFireworksActive, setIsFireworksActive] = useState(false);
+  const fireworksCleanupRef = useRef<(() => void) | null>(null);
+  const fireworksActiveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setEditForm(coupleInfo);
@@ -53,22 +87,83 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
 
   useEffect(() => {
     const calculateTime = () => {
-      const start = new Date(coupleInfo.startDate).getTime();
-      const now = new Date().getTime();
-      const diff = Math.max(0, now - start);
-
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-      const minutes = Math.floor((diff / (1000 * 60)) % 60);
-      const seconds = Math.floor((diff / 1000) % 60);
-
-      setTimeTogether({ days, hours, minutes, seconds });
+      setTimeTogether(computeTimeTogether(coupleInfo.startDate));
     };
 
     calculateTime();
     const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
-  }, [coupleInfo.startDate]);
+  }, [coupleInfo.startDate, computeTimeTogether]);
+
+  const milestoneStatus = getLoveMilestoneStatus(timeTogether.days, coupleInfo.startDate);
+
+  const playMilestoneCelebration = useCallback((milestone: LoveMilestone) => {
+    if (fireworksCleanupRef.current) {
+      fireworksCleanupRef.current();
+    }
+    if (fireworksActiveTimerRef.current !== null) {
+      window.clearTimeout(fireworksActiveTimerRef.current);
+    }
+
+    setCelebratingMilestone(milestone);
+    setIsFireworksActive(true);
+    fireworksCleanupRef.current = launchMilestoneFireworks(milestone.tier);
+    fireworksActiveTimerRef.current = window.setTimeout(() => {
+      setIsFireworksActive(false);
+      fireworksActiveTimerRef.current = null;
+    }, 3200);
+  }, []);
+
+  // Dọn dẹp pháo hoa khi unmount
+  useEffect(() => {
+    return () => {
+      if (fireworksCleanupRef.current) fireworksCleanupRef.current();
+      if (fireworksActiveTimerRef.current !== null) {
+        window.clearTimeout(fireworksActiveTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Tự động bắn pháo hoa chúc mừng khi đạt cột mốc quan trọng (100 ngày, 200 ngày, 1 năm, 500 ngày, 1000 ngày...)
+  useEffect(() => {
+    const targetMilestone = milestoneStatus.exactMilestone || milestoneStatus.latestAchieved;
+    if (!targetMilestone) return;
+
+    const CELEBRATED_KEY = 'goc_nho_celebrated_milestones_v1';
+    const milestoneKey = `${coupleInfo.startDate}:${targetMilestone.days}`;
+
+    let celebratedList: string[] = [];
+    try {
+      const raw = localStorage.getItem(CELEBRATED_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) celebratedList = parsed;
+      }
+    } catch {}
+
+    // Nếu hôm nay đúng ngày cột mốc: hiện thiệp chúc mừng; nếu chưa từng bắn pháo hoa cho cột mốc này thì tự động bắn!
+    if (milestoneStatus.exactMilestone) {
+      setCelebratingMilestone(milestoneStatus.exactMilestone);
+    }
+
+    if (!celebratedList.includes(milestoneKey)) {
+      try {
+        const nextList = [...celebratedList.slice(-24), milestoneKey];
+        localStorage.setItem(CELEBRATED_KEY, JSON.stringify(nextList));
+      } catch {}
+
+      const startTimer = window.setTimeout(() => {
+        playMilestoneCelebration(targetMilestone);
+      }, 450);
+
+      return () => window.clearTimeout(startTimer);
+    }
+  }, [
+    coupleInfo.startDate,
+    milestoneStatus.exactMilestone?.days,
+    milestoneStatus.latestAchieved?.days,
+    playMilestoneCelebration
+  ]);
 
   const triggerLoveShower = () => {
     confetti({
@@ -84,7 +179,14 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
     e.preventDefault();
     onUpdateCoupleInfo(editForm);
     setIsEditing(false);
-    triggerLoveShower();
+
+    const updatedTime = computeTimeTogether(editForm.startDate);
+    const updatedMilestone = getLoveMilestoneStatus(updatedTime.days, editForm.startDate);
+    if (updatedMilestone.exactMilestone) {
+      playMilestoneCelebration(updatedMilestone.exactMilestone);
+    } else {
+      triggerLoveShower();
+    }
   };
 
   return (
@@ -275,7 +377,85 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
           {/* Special date subtitle */}
           <div className="mt-3 text-xs text-[#8C6D58] flex items-center justify-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-[#E8A598]" />
-            <span>Kể từ ngày {new Date(coupleInfo.startDate).toLocaleDateString('vi-VN')}</span>
+            <span>
+              Kể từ ngày{' '}
+              {(parseLocalStartDate(coupleInfo.startDate) || new Date()).toLocaleDateString('vi-VN')}
+            </span>
+          </div>
+
+          {/* Thiệp Chúc Mừng Cột Mốc Quan Trọng (kèm hiệu ứng pháo hoa) */}
+          {celebratingMilestone && (
+            <div className="mt-4 max-w-lg mx-auto bg-gradient-to-r from-[#FFF7F2] via-[#FFFDF9] to-[#FFF6EB] border border-[#E8A598]/60 rounded-2xl px-4 py-3 shadow-sm text-left relative animate-fadeIn">
+              <button
+                type="button"
+                onClick={() => setCelebratingMilestone(null)}
+                className="absolute top-2.5 right-2.5 p-1 text-[#8C6D58]/70 hover:text-[#3D2E28] rounded-full hover:bg-[#F5EFE6] transition-colors cursor-pointer"
+                aria-label="Đóng thông báo cột mốc"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+              <div className="flex items-start gap-3 pr-6">
+                <div className="w-9 h-9 rounded-xl bg-[#E8A598]/20 text-[#D98A76] flex items-center justify-center shrink-0 mt-0.5">
+                  <PartyPopper className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-semibold text-[#D98A76]">
+                    {milestoneStatus.exactMilestone
+                      ? 'Chúc mừng cột mốc hôm nay'
+                      : 'Cột mốc yêu thương đã chinh phục'}
+                  </div>
+                  <h2 className="font-serif-romantic text-base sm:text-lg font-bold text-[#3D2E28] leading-snug">
+                    {celebratingMilestone.title}
+                  </h2>
+                  <p className="text-xs text-[#8C6D58] mt-0.5 leading-relaxed">
+                    {celebratingMilestone.subtitle}
+                  </p>
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => playMilestoneCelebration(celebratingMilestone)}
+                      disabled={isFireworksActive}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#D98A76] hover:bg-[#C87D55] text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 whitespace-nowrap"
+                    >
+                      <PartyPopper className="w-3.5 h-3.5" />
+                      <span>{isFireworksActive ? 'Đang bắn pháo hoa...' : 'Bắn lại pháo hoa'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Thanh tiến độ cột mốc tiếp theo + nút bắn pháo hoa mừng cột mốc đã đạt */}
+          <div className="mt-4 max-w-md mx-auto">
+            <div className="flex items-center justify-between gap-2 text-[11px] text-[#8C6D58] mb-1.5">
+              <span className="truncate">
+                {milestoneStatus.latestAchieved
+                  ? `Đã đạt mốc ${milestoneStatus.latestAchieved.days.toLocaleString('vi-VN')} ngày`
+                  : 'Đang hướng tới cột mốc đầu tiên'}
+                <span className="mx-1.5" aria-hidden="true">·</span>
+                <span className="text-[#3D2E28] font-medium">
+                  Còn <span className="tabular-nums">{milestoneStatus.daysUntilNext}</span> ngày tới mốc {milestoneStatus.nextMilestone.title}
+                </span>
+              </span>
+              {milestoneStatus.latestAchieved && !celebratingMilestone && (
+                <button
+                  type="button"
+                  onClick={() => playMilestoneCelebration(milestoneStatus.latestAchieved!)}
+                  className="inline-flex items-center gap-1 text-[#D98A76] hover:text-[#C87D55] font-semibold hover:underline transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+                  title={`Bắn pháo hoa chúc mừng cột mốc ${milestoneStatus.latestAchieved.title}`}
+                >
+                  <PartyPopper className="w-3.5 h-3.5" />
+                  <span>Mừng mốc</span>
+                </button>
+              )}
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-[#8C6D58]/15 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#E8A598] to-[#D98A76] transition-all duration-500"
+                style={{ width: `${Math.max(4, milestoneStatus.progressPercent)}%` }}
+              />
+            </div>
           </div>
         </div>
 

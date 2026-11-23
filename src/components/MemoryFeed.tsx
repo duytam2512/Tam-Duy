@@ -20,6 +20,25 @@ import {
 } from 'lucide-react';
 import { Memory, ViewMode, POPULAR_TAGS, CoupleInfo } from '../types';
 import { formatVideoDuration } from '../services/storage';
+import { SmartImage } from './SmartImage';
+
+const formatSafeDate = (dateStr?: string, options?: Intl.DateTimeFormatOptions): string => {
+  if (!dateStr) return 'Không rõ ngày';
+  const match = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsed = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(dateStr);
+  if (!Number.isFinite(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString('vi-VN', options);
+};
+
+const getSafeYear = (dateStr?: string): string => {
+  if (!dateStr) return '';
+  const match = dateStr.trim().match(/^(\d{4})/);
+  if (match) return match[1];
+  const parsed = new Date(dateStr);
+  return Number.isFinite(parsed.getTime()) ? String(parsed.getFullYear()) : '';
+};
 
 interface MemoryFeedProps {
   memories: Memory[];
@@ -60,8 +79,9 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
   const availableYears = useMemo(() => {
     const years = new Set<string>();
     memories.forEach((m) => {
-      if (m.date) {
-        years.add(m.date.split('-')[0]);
+      const yr = getSafeYear(m.date);
+      if (yr) {
+        years.add(yr);
       }
     });
     return Array.from(years).sort().reverse();
@@ -79,15 +99,15 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
         return false;
       }
       // 2. Year
-      if (selectedYear !== 'all' && !m.date.startsWith(selectedYear)) {
+      if (selectedYear !== 'all' && !(m.date || '').startsWith(selectedYear)) {
         return false;
       }
       // 3. Search query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const inCaption = m.caption.toLowerCase().includes(query);
-        const inLocation = m.location?.toLowerCase().includes(query);
-        const inDate = m.date.includes(query);
+        const inCaption = (m.caption || '').toLowerCase().includes(query);
+        const inLocation = (m.location || '').toLowerCase().includes(query);
+        const inDate = (m.date || '').includes(query);
         if (!inCaption && !inLocation && !inDate) {
           return false;
         }
@@ -256,9 +276,9 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                   onClick={() => onOpenLightbox(item)}
                   className="relative rounded-xl overflow-hidden cursor-pointer bg-[#F9F6F0] aspect-4/3 group-hover:opacity-95"
                 >
-                  <img
+                  <SmartImage
                     src={item.imageUrl}
-                    alt={item.caption}
+                    alt={item.caption || 'Ảnh kỷ niệm'}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     loading="lazy"
                   />
@@ -301,7 +321,7 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                   <div className="flex items-center justify-between text-xs text-[#8C6D58] mb-2 font-medium">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-[#E8A598]" />
-                      {new Date(item.date).toLocaleDateString('vi-VN')}
+                      {formatSafeDate(item.date)}
                     </span>
 
                     {item.location && (
@@ -373,13 +393,13 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
               {/* Date in desktop left gutter */}
               <div className="hidden sm:block absolute -left-36 top-5 text-right w-28">
                 <div className="font-serif-romantic font-bold text-sm text-[#3D2E28]">
-                  {new Date(item.date).toLocaleDateString('vi-VN', {
+                  {formatSafeDate(item.date, {
                     day: 'numeric',
                     month: 'short'
                   })}
                 </div>
                 <div className="text-xs text-[#8C6D58]">
-                  {new Date(item.date).getFullYear()}
+                  {getSafeYear(item.date)}
                 </div>
               </div>
 
@@ -391,9 +411,9 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                     onClick={() => onOpenLightbox(item)}
                     className="sm:w-48 h-48 rounded-xl overflow-hidden cursor-pointer bg-[#F9F6F0] shrink-0 relative group"
                   >
-                    <img
+                    <SmartImage
                       src={item.imageUrl}
-                      alt={item.caption}
+                      alt={item.caption || 'Ảnh kỷ niệm'}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     {item.mediaType === 'video' && item.videoUrl ? (
@@ -421,7 +441,7 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                     <div>
                       <div className="flex flex-wrap items-center gap-2 mb-2 text-xs text-[#8C6D58]">
                         <span className="sm:hidden font-semibold text-[#D98A76]">
-                          {new Date(item.date).toLocaleDateString('vi-VN')}
+                          {formatSafeDate(item.date)}
                         </span>
                         {item.location && (
                           <span className="flex items-center gap-1 font-medium bg-[#F9F6F0] px-2.5 py-0.5 rounded-full">

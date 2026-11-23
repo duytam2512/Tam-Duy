@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 import {
@@ -72,4 +73,8 @@ if (import.meta.env.PROD && typeof window !== 'undefined' && 'serviceWorker' in 
   }
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <AppErrorBoundary>
+    <App />
+  </AppErrorBoundary>
+);

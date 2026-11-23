@@ -20,7 +20,18 @@ import {
 } from 'lucide-react';
 import { Memory, CoupleInfo, CaptionFont } from '../types';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
+import { SmartImage } from './SmartImage';
 import { BrandLogo } from './BrandLogo';
+
+const formatSafeReadingDate = (dateStr?: string, options?: Intl.DateTimeFormatOptions): string => {
+  if (!dateStr) return 'Khoảnh khắc đáng nhớ';
+  const match = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsed = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(dateStr);
+  if (!Number.isFinite(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString('vi-VN', options);
+};
 
 interface ReadingModeViewProps {
   isOpen: boolean;
@@ -80,9 +91,16 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
     return () => clearInterval(timer);
   }, [isOpen, isAutoPlay, displayMode, memories.length]);
 
+  useEffect(() => {
+    if (memories.length > 0 && currentPage >= memories.length) {
+      setCurrentPage(memories.length - 1);
+    }
+  }, [memories.length, currentPage]);
+
   if (!isOpen || memories.length === 0) return null;
 
-  const currentMemory = memories[currentPage] || memories[0];
+  const safePageIndex = Math.min(currentPage, memories.length - 1);
+  const currentMemory = memories[safePageIndex] || memories[0];
 
   // Theme styles
   const themeStyles = {
@@ -257,7 +275,7 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
               <div className="flex items-center gap-2 text-xs sm:text-sm font-medium">
                 <span className={`flex items-center gap-1 font-semibold ${themeStyles.accent}`}>
                   <Calendar className="w-4 h-4" />
-                  {new Date(currentMemory.date).toLocaleDateString('vi-VN', {
+                  {formatSafeReadingDate(currentMemory.date, {
                     weekday: 'long',
                     year: 'numeric',
                     month: 'long',
@@ -295,9 +313,9 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
                     iframeClassName="w-full h-full bg-black"
                   />
                 ) : (
-                  <img
+                  <SmartImage
                     src={currentMemory.imageUrl}
-                    alt={currentMemory.caption}
+                    alt={currentMemory.caption || 'Ảnh kỷ niệm'}
                     className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
                   />
                 )}
@@ -376,7 +394,7 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
               <div className="flex items-center justify-between text-xs mb-4 pb-3 border-b border-current/10 opacity-70">
                 <span className="flex items-center gap-1.5 font-semibold">
                   <Calendar className="w-3.5 h-3.5 text-[#D98A76]" />
-                  {new Date(mem.date).toLocaleDateString('vi-VN', {
+                  {formatSafeReadingDate(mem.date, {
                     day: 'numeric',
                     month: 'long',
                     year: 'numeric'
@@ -401,9 +419,9 @@ export const ReadingModeView: React.FC<ReadingModeViewProps> = ({
                     iframeClassName="w-full h-full bg-black"
                   />
                 ) : (
-                  <img
+                  <SmartImage
                     src={mem.imageUrl}
-                    alt={mem.caption}
+                    alt={mem.caption || 'Ảnh kỷ niệm'}
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />

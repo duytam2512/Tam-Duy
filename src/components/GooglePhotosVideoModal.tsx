@@ -24,6 +24,8 @@ import {
 import confetti from 'canvas-confetti';
 import { Memory, CoupleInfo, MusicTrack } from '../types';
 import { getStoredPlaylist } from '../services/storage';
+import { isCloudMediaUrl, resolveCloudMediaUrl } from '../services/cloudMedia';
+import { SmartImage } from './SmartImage';
 
 interface GooglePhotosVideoModalProps {
   isOpen: boolean;
@@ -85,6 +87,7 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
   // Animation frame ref
   const animFrameRef = useRef<number | null>(null);
   const lastTimestampRef = useRef<number | null>(null);
+  const currentTimeRef = useRef<number>(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Lấy playlist nhạc
@@ -137,16 +140,27 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
       (a, b) => selectedPhotoIds.indexOf(a.id) - selectedPhotoIds.indexOf(b.id)
     );
 
-    const promises = selectedMems.map((mem) => {
+    const promises = selectedMems.map(async (mem) => {
+      let resolvedUrl = mem.imageUrl;
+      if (isCloudMediaUrl(resolvedUrl)) {
+        try {
+          resolvedUrl = await resolveCloudMediaUrl(resolvedUrl);
+        } catch {
+          return null;
+        }
+      }
+      if (!resolvedUrl) return null;
       return new Promise<LoadedImage | null>((resolve) => {
         const img = new Image();
-        img.crossOrigin = 'anonymous';
+        if (!resolvedUrl.startsWith('data:') && !resolvedUrl.startsWith('blob:')) {
+          img.crossOrigin = 'anonymous';
+        }
         img.onload = () => resolve({ id: mem.id, img, memory: mem });
         img.onerror = () => {
           console.warn('Lỗi tải ảnh kỷ niệm:', mem.imageUrl);
           resolve(null);
         };
-        img.src = mem.imageUrl;
+        img.src = resolvedUrl;
       });
     });
 
@@ -160,6 +174,7 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
   const handleProceedToPreview = async () => {
     if (selectedPhotoIds.length < 2) return;
     setActiveStep('preview');
+    currentTimeRef.current = 0;
     setCurrentTime(0);
     setIsPlaying(true);
     await preloadSelectedImages();
@@ -168,7 +183,7 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
   // Quản lý âm thanh khi preview
   useEffect(() => {
     const selectedTrack = playlist[selectedTrackIndex] || playlist[0];
-    if (activeStep === 'preview' && selectedTrack && !selectedTrack.isYouTube) {
+    if (isOpen && activeStep === 'preview' && selectedTrack && !selectedTrack.isYouTube) {
       if (!audioPreviewRef.current) {
         audioPreviewRef.current = new Audio();
         audioPreviewRef.current.loop = true;
@@ -178,6 +193,8 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
       if (isPlaying) {
         audioPreviewRef.current.play().catch(() => {});
       }
+    } else if (audioPreviewRef.current) {
+      audioPreviewRef.current.pause();
     }
 
     return () => {
@@ -185,18 +202,18 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
         audioPreviewRef.current.pause();
       }
     };
-  }, [activeStep, selectedTrackIndex, playlist, isAudioMuted]);
+  }, [isOpen, activeStep, selectedTrackIndex, playlist, isAudioMuted]);
 
   // Đồng bộ Play / Pause âm thanh
   useEffect(() => {
     if (audioPreviewRef.current) {
-      if (isPlaying && activeStep === 'preview') {
+      if (isOpen && isPlaying && activeStep === 'preview') {
         audioPreviewRef.current.play().catch(() => {});
       } else {
         audioPreviewRef.current.pause();
       }
     }
-  }, [isPlaying, activeStep]);
+  }, [isOpen, isPlaying, activeStep]);
 
   // Canvas kích thước chuẩn
   const getCanvasDimensions = () => {
@@ -466,9 +483,9 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
     ]
   );
 
-  // Vòng lặp Animation Frame cho Preview mượt mà 60fps
+  // Vòng lặp Animation Frame cho Preview mượt mà 60fps (không khởi tạo lại effect mỗi frame)
   useEffect(() => {
-    if (activeStep !== 'preview' || !isPlaying) {
+    if (!isOpen || activeStep !== 'preview' || !isPlaying) {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       lastTimestampRef.current = null;
       return;
@@ -487,18 +504,14 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
 
     const step = (timestamp: number) => {
       if (lastTimestampRef.current !== null) {
-        const delta = (timestamp - lastTimestampRef.current) / 1000;
-        setCurrentTime((prev) => {
-          const next = prev + delta;
-          if (next >= totalDuration) {
-            return 0; // Lặp lại từ đầu
-          }
-          return next;
-        });
+        const delta = Math.min(0.1, (timestamp - lastTimestampRef.current) / 1000);
+        const next = currentTimeRef.current + delta;
+        currentTimeRef.current = next >= totalDuration ? 0 : next;
+        setCurrentTime(currentTimeRef.current);
       }
       lastTimestampRef.current = timestamp;
 
-      renderFrame(ctx, currentTime, width, height);
+      renderFrame(ctx, currentTimeRef.current, width, height);
       animFrameRef.current = requestAnimationFrame(step);
     };
 
@@ -506,12 +519,14 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
 
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      lastTimestampRef.current = null;
     };
-  }, [activeStep, isPlaying, currentTime, totalDuration, renderFrame, aspectRatio]);
+  }, [isOpen, activeStep, isPlaying, totalDuration, renderFrame, aspectRatio]);
 
   // Tua video bằng thanh trượt
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
+    currentTimeRef.current = val;
     setCurrentTime(val);
     const canvas = canvasRef.current;
     if (canvas) {
@@ -761,7 +776,7 @@ export const GooglePhotosVideoModal: React.FC<GooglePhotosVideoModalProps> = ({
                           : 'border-transparent opacity-65 hover:opacity-100 hover:border-[#8C6D58]/30'
                       }`}
                     >
-                      <img
+                      <SmartImage
                         src={mem.imageUrl}
                         alt=""
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
