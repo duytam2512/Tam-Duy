@@ -509,6 +509,9 @@ export interface MusicTrack {
   isZing?: boolean;
   isYouTube?: boolean;
   youtubeId?: string;
+  youtubePlaylistId?: string;
+  isPersonalUpload?: boolean;
+  playlistName?: string;
 }
 
 export const VPOP_FEATURED_TRACKS: MusicTrack[] = [

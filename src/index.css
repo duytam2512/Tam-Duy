@@ -91,6 +91,165 @@
   animation: floatUp 1.2s ease-out forwards;
 }
 
+/* Gentle 3D Page-Flip Animation for MemoryFeed Photos (Desktop hover & Mobile tap) */
+.memory-flip-scene {
+  perspective: 1100px;
+  -webkit-perspective: 1100px;
+}
+
+.memory-flip-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  transition: transform 0.68s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .memory-flip-scene:hover .memory-flip-card {
+    transform: rotateY(180deg);
+  }
+}
+
+.memory-flip-scene.is-flipped .memory-flip-card {
+  transform: rotateY(180deg);
+}
+
+.memory-flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.memory-flip-front {
+  transform: rotateY(0deg);
+}
+
+.memory-flip-back {
+  transform: rotateY(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memory-flip-card {
+    transition: none;
+    transform: none !important;
+  }
+
+  .memory-flip-back {
+    transform: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+
+  .memory-flip-scene.is-flipped .memory-flip-back {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .memory-flip-scene:hover .memory-flip-back {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+}
+
+/* Tactile Heart Vibration / Pulse Micro-Interaction for Like Buttons */
+@keyframes heartVibratePulse {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  18% {
+    transform: scale(1.38) rotate(-13deg);
+  }
+  36% {
+    transform: scale(0.92) rotate(11deg);
+  }
+  54% {
+    transform: scale(1.24) rotate(-7deg);
+  }
+  74% {
+    transform: scale(1.04) rotate(4deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes heartGentleTap {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(0.84) rotate(-6deg);
+  }
+  70% {
+    transform: scale(1.08) rotate(3deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes heartRippleRing {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@keyframes heartSparkFloat {
+  0% {
+    transform: translate(-50%, 0) scale(0.65) rotate(-8deg);
+    opacity: 0.95;
+  }
+  50% {
+    transform: translate(-50%, -13px) scale(1.05) rotate(8deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -24px) scale(0.85) rotate(-4deg);
+    opacity: 0;
+  }
+}
+
+.animate-heart-vibrate-pulse {
+  animation: heartVibratePulse 0.56s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center;
+}
+
+.animate-heart-gentle-tap {
+  animation: heartGentleTap 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center;
+}
+
+.animate-heart-ripple {
+  animation: heartRippleRing 0.52s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-heart-spark {
+  animation: heartSparkFloat 0.6s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-heart-vibrate-pulse,
+  .animate-heart-gentle-tap,
+  .animate-heart-ripple,
+  .animate-heart-spark {
+    animation: none !important;
+  }
+}
+
 /* Custom Soft Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

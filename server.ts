@@ -380,16 +380,30 @@ app.post(
       const filePath = path.join(MUSIC_DIR, uniqueName);
       fs.writeFileSync(filePath, buffer);
 
-      const cleanTitle = rawName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Bài hát của hai đứa";
+      let customTitle = "";
+      let customArtist = "";
+      try {
+        customTitle = decodeURIComponent(String(req.headers["x-track-title"] || "")).trim();
+        customArtist = decodeURIComponent(String(req.headers["x-track-artist"] || "")).trim();
+      } catch {
+        customTitle = String(req.headers["x-track-title"] || "").trim();
+        customArtist = String(req.headers["x-track-artist"] || "").trim();
+      }
+
+      const cleanTitle =
+        customTitle ||
+        rawName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() ||
+        "Bài hát của hai đứa";
 
       return res.json({
         success: true,
         song: {
-          id: `upload-${Date.now()}`,
+          id: `upload-${Date.now()}-${crypto.randomBytes(2).toString("hex")}`,
           title: cleanTitle,
-          artist: "Nhạc tải lên từ máy",
-          mood: "Yêu thích",
+          artist: customArtist || "Nhạc cá nhân tải lên",
+          mood: "MP3 cá nhân",
           url: `/music/${uniqueName}`,
+          isPersonalUpload: true,
         },
       });
     } catch (err: any) {
@@ -950,13 +964,214 @@ app.get("/api/zingmp3/stream", async (req, res) => {
    YOUTUBE MUSIC INTEGRATION - THÊM NHẠC TỪ LINK YOUTUBE
    ========================================================================= */
 
+function extractYouTubePlaylistIdServer(input: string): string | null {
+  const trimmed = input.trim();
+  if (/^(PL|OLAK5uy_|UU|LL|FL|RD)[a-zA-Z0-9_-]{8,}$/.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(withProto);
+    if (!/(^|\.)(youtube\.com|youtu\.be)$/i.test(parsed.hostname)) {
+      return null;
+    }
+    const list = parsed.searchParams.get("list");
+    if (list && /^[a-zA-Z0-9_-]{10,}$/.test(list)) {
+      return list;
+    }
+  } catch {
+    const m = trimmed.match(/[?&]list=([a-zA-Z0-9_-]{10,})/i);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+}
+
 function extractYouTubeVideoId(input: string): string | null {
   const trimmed = input.trim();
+  if (/youtube\.com\/playlist\b/i.test(trimmed)) {
+    return null;
+  }
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
     return trimmed;
   }
   const match = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|watch\?.+&v=))([\w-]{11})/);
   return match ? match[1] : null;
+}
+
+function extractYouTubeText(obj: any): string {
+  if (!obj) return "";
+  if (typeof obj.simpleText === "string") return obj.simpleText;
+  if (Array.isArray(obj.runs)) {
+    return obj.runs.map((r: any) => (typeof r?.text === "string" ? r.text : "")).join("");
+  }
+  return "";
+}
+
+function collectPlaylistRenderers(node: any, out: any[], limit: number) {
+  if (!node || typeof node !== "object" || out.length >= limit) return;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      if (out.length >= limit) break;
+      collectPlaylistRenderers(item, out, limit);
+    }
+    return;
+  }
+  if (node.playlistVideoRenderer && typeof node.playlistVideoRenderer.videoId === "string") {
+    out.push({ kind: "legacy", item: node.playlistVideoRenderer });
+    return;
+  }
+  if (node.playlistPanelVideoRenderer && typeof node.playlistPanelVideoRenderer.videoId === "string") {
+    out.push({ kind: "legacy", item: node.playlistPanelVideoRenderer });
+    return;
+  }
+  if (
+    node.lockupViewModel &&
+    typeof node.lockupViewModel.contentId === "string" &&
+    /^[a-zA-Z0-9_-]{11}$/.test(node.lockupViewModel.contentId)
+  ) {
+    out.push({ kind: "lockup", item: node.lockupViewModel });
+    return;
+  }
+  for (const val of Object.values(node)) {
+    if (out.length >= limit) break;
+    if (val && typeof val === "object") {
+      collectPlaylistRenderers(val, out, limit);
+    }
+  }
+}
+
+async function fetchYouTubePlaylistTracks(
+  playlistId: string,
+  seedVideoId?: string | null,
+  limit = 25
+): Promise<{ playlistTitle: string; tracks: any[]; isNativePlaylist: boolean }> {
+  const safeLimit = Math.min(30, Math.max(1, limit));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  let playlistTitle = "Danh sách phát YouTube";
+  const tracks: any[] = [];
+
+  try {
+    const targetUrl =
+      playlistId.startsWith("RD") && seedVideoId
+        ? `https://www.youtube.com/watch?v=${encodeURIComponent(seedVideoId)}&list=${encodeURIComponent(playlistId)}`
+        : `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
+
+    const res = await fetch(targetUrl, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "vi,en-US;q=0.9,en;q=0.8",
+      },
+    });
+
+    if (res.ok) {
+      const html = await res.text();
+      const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+      if (titleMatch?.[1]) {
+        const cleaned = titleMatch[1].replace(/\s*-\s*YouTube\s*$/i, "").trim();
+        if (cleaned && cleaned.toLowerCase() !== "youtube") {
+          playlistTitle = cleaned;
+        }
+      }
+
+      const jsonMatch =
+        html.match(/var ytInitialData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/) ||
+        html.match(/window\["ytInitialData"\]\s*=\s*(\{[\s\S]*?\});/);
+
+      if (jsonMatch?.[1]) {
+        try {
+          const data = JSON.parse(jsonMatch[1]);
+          const metaTitle =
+            data?.metadata?.playlistMetadataRenderer?.title ||
+            extractYouTubeText(data?.header?.playlistHeaderRenderer?.title);
+          if (metaTitle && typeof metaTitle === "string") {
+            playlistTitle = metaTitle.trim();
+          }
+
+          const renderers: Array<{ kind: "legacy" | "lockup"; item: any }> = [];
+          collectPlaylistRenderers(data, renderers, safeLimit);
+
+          const seen = new Set<string>();
+          for (const entry of renderers) {
+            const { kind, item } = entry;
+            let vid = "";
+            let title = "";
+            let artist = "YouTube";
+            let lengthSec = NaN;
+
+            if (kind === "lockup") {
+              vid = String(item.contentId || "").trim();
+              title = String(item?.metadata?.lockupMetadataViewModel?.title?.content || "").trim();
+              const rows =
+                item?.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows;
+              const firstArtist = rows?.[0]?.metadataParts?.[0]?.text?.content;
+              if (typeof firstArtist === "string" && firstArtist.trim()) {
+                artist = firstArtist.trim();
+              }
+            } else {
+              vid = String(item.videoId || "").trim();
+              title = extractYouTubeText(item.title).trim();
+              artist =
+                extractYouTubeText(item.shortBylineText).trim() ||
+                extractYouTubeText(item.longBylineText).trim() ||
+                "YouTube";
+              lengthSec = Number(item.lengthSeconds);
+            }
+
+            if (!/^[a-zA-Z0-9_-]{11}$/.test(vid) || seen.has(vid)) continue;
+            if (!title || /^\[(Deleted|Private) video\]$/i.test(title)) continue;
+            seen.add(vid);
+
+            tracks.push({
+              id: `yt-${vid}`,
+              title,
+              artist,
+              mood: "YouTube Playlist",
+              url: `https://www.youtube.com/watch?v=${vid}&list=${playlistId}`,
+              thumbnail: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+              ...(Number.isFinite(lengthSec) && lengthSec > 0 ? { duration: Math.round(lengthSec) } : {}),
+              isYouTube: true,
+              youtubeId: vid,
+              playlistName: playlistTitle,
+            });
+          }
+        } catch (parseErr) {
+          console.warn("Không thể parse ytInitialData cho playlist YouTube:", parseErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Lỗi tải danh sách phát YouTube:", err);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (tracks.length > 0) {
+    return { playlistTitle, tracks, isNativePlaylist: false };
+  }
+
+  // Fallback an toàn: phát trực tiếp toàn bộ YouTube Playlist qua YouTube IFrame Player API
+  return {
+    playlistTitle,
+    isNativePlaylist: true,
+    tracks: [
+      {
+        id: `ytpl-${playlistId}`,
+        title: playlistTitle,
+        artist: "Danh sách phát YouTube",
+        mood: "YouTube Playlist",
+        url: `https://www.youtube.com/playlist?list=${playlistId}`,
+        thumbnail: seedVideoId ? `https://i.ytimg.com/vi/${seedVideoId}/hqdefault.jpg` : undefined,
+        isYouTube: true,
+        ...(seedVideoId ? { youtubeId: seedVideoId } : {}),
+        youtubePlaylistId: playlistId,
+        playlistName: playlistTitle,
+      },
+    ],
+  };
 }
 
 async function searchYouTubeVideo(query: string): Promise<string | null> {
@@ -1033,6 +1248,48 @@ app.post("/api/youtube/resolve", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error?.message || "Không thể phân tích link YouTube lúc này"
+    });
+  }
+});
+
+/**
+ * API: POST /api/youtube/playlist
+ * Trích xuất danh sách phát (Playlist) từ link YouTube để thêm vào MusicPlayer
+ */
+app.post("/api/youtube/playlist", async (req, res) => {
+  try {
+    const rawUrl = String(req.body?.url || req.body?.input || "").trim();
+    const limit = Number(req.body?.limit || 25);
+    if (!rawUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng dán đường dẫn danh sách phát YouTube (có chứa list=...)",
+      });
+    }
+
+    const playlistId = extractYouTubePlaylistIdServer(rawUrl);
+    if (!playlistId) {
+      return res.status(400).json({
+        success: false,
+        message: "Không nhận diện được mã danh sách phát YouTube trong đường dẫn này.",
+      });
+    }
+
+    const seedVideoId = extractYouTubeVideoId(rawUrl);
+    const result = await fetchYouTubePlaylistTracks(playlistId, seedVideoId, limit);
+
+    return res.json({
+      success: true,
+      playlistId,
+      playlistTitle: result.playlistTitle,
+      isNativePlaylist: result.isNativePlaylist,
+      tracks: result.tracks,
+    });
+  } catch (error: any) {
+    console.error("Lỗi phân tích YouTube Playlist:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Không thể tải danh sách phát YouTube lúc này",
     });
   }
 });
@@ -1163,8 +1420,25 @@ app.post("/api/music/resolve-link", async (req, res) => {
       });
     }
 
-    // 2. Link YouTube (youtube.com / youtu.be / music.youtube / shorts)
+    // 2. Link Danh sách phát YouTube (playlist?list=...)
+    const ytPlaylistId = extractYouTubePlaylistIdServer(rawInput);
     const ytIdFromLink = extractYouTubeVideoId(rawInput);
+    if (ytPlaylistId && (/youtube\.com\/playlist\b/i.test(rawInput) || !ytIdFromLink)) {
+      const result = await fetchYouTubePlaylistTracks(ytPlaylistId, ytIdFromLink, 25);
+      return res.json({
+        success: true,
+        isPlaylist: true,
+        playlistId: ytPlaylistId,
+        playlistTitle: customTitle || result.playlistTitle,
+        tracks: result.tracks,
+        song: result.tracks[0],
+        note: result.isNativePlaylist
+          ? `Đã thêm danh sách phát "${customTitle || result.playlistTitle}" từ YouTube!`
+          : `Đã nhập ${result.tracks.length} bài từ danh sách phát "${customTitle || result.playlistTitle}"!`,
+      });
+    }
+
+    // 2b. Link Video YouTube đơn lẻ (youtube.com / youtu.be / music.youtube / shorts)
     if (ytIdFromLink && (/youtu\.?be/i.test(rawInput) || /^[a-zA-Z0-9_-]{11}$/.test(rawInput))) {
       let title = customTitle || "Giai điệu từ YouTube";
       let artist = "YouTube";
@@ -1182,8 +1456,6 @@ app.post("/api/music/resolve-link", async (req, res) => {
         }
       } catch {}
 
-      // Thử tìm nhanh bản MP3 miễn phí cùng tên trên Zing MP3 nếu là nhạc Việt (chỉ lấy khi tên khớp) để phát mượt trên iPhone?
-      // Trả trực tiếp YouTube đúng video người dùng chọn để không sai bài!
       return res.json({
         success: true,
         song: {

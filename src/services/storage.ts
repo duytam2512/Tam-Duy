@@ -13,7 +13,7 @@ import {
   VPOP_FEATURED_TRACKS,
   INITIAL_DIARY_ENTRIES
 } from '../types';
-import { db, auth } from '../firebase';
+import { db, auth, waitForInitialConnection } from '../firebase';
 import {
   doc,
   collection,
@@ -29,6 +29,44 @@ import {
   isCloudMediaUrl,
   MAX_CLOUD_MEDIA_BYTES
 } from './cloudMedia';
+
+/**
+ * Chờ bắt tay kết nối nhẹ ban đầu (`test/connection`) hoàn tất rồi mới gắn các `onSnapshot`
+ * (tránh việc hàng MB ảnh kỷ niệm & ảnh nền nghẽn đầu luồng Watch stream khiến Firestore báo offline sau 10s).
+ */
+const subscribeAfterHandshake = (
+  attach: () => () => void,
+  extraDelayMs = 0
+): (() => void) => {
+  let disposed = false;
+  let unsubscribe: (() => void) | null = null;
+  let delayTimer: ReturnType<typeof setTimeout> | null = null;
+
+  void waitForInitialConnection().then(() => {
+    if (disposed) return;
+    if (extraDelayMs > 0) {
+      delayTimer = setTimeout(() => {
+        delayTimer = null;
+        if (disposed) return;
+        unsubscribe = attach();
+      }, extraDelayMs);
+    } else {
+      unsubscribe = attach();
+    }
+  });
+
+  return () => {
+    disposed = true;
+    if (delayTimer) {
+      clearTimeout(delayTimer);
+      delayTimer = null;
+    }
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+  };
+};
 
 const PLAYLIST_KEY = 'goc_nho_playlist';
 const MEMORIES_KEY = 'goc_nho_binh_yen_memories_v3';
@@ -237,61 +275,61 @@ export const subscribeToSharedPlaylist = (
 ): (() => void) => {
   const playlistDocRef = doc(db, 'shared_data', 'playlist');
 
-  const unsubscribe = onSnapshot(
-    playlistDocRef,
-    async (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
-          const { tracks: cleanTracks, repaired } = sanitizePlaylistTracks(data.tracks);
-          // Cập nhật localStorage để lưu offline
-          try {
-            localStorage.setItem(PLAYLIST_KEY, JSON.stringify(cleanTracks));
-          } catch (e) {
-            console.warn('Lỗi cache playlist:', e);
-          }
-          onUpdate(cleanTracks);
-
-          // Nếu có bài bị link hỏng đã được tự sửa -> cập nhật lại Cloud luôn cho tất cả thiết bị
-          if (repaired) {
+  return subscribeAfterHandshake(() =>
+    onSnapshot(
+      playlistDocRef,
+      async (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+            const { tracks: cleanTracks, repaired } = sanitizePlaylistTracks(data.tracks);
+            // Cập nhật localStorage để lưu offline
             try {
-              await setDoc(playlistDocRef, {
-                tracks: cleanTracks,
-                updatedAt: Date.now()
-              });
-            } catch {}
+              localStorage.setItem(PLAYLIST_KEY, JSON.stringify(cleanTracks));
+            } catch (e) {
+              console.warn('Lỗi cache playlist:', e);
+            }
+            onUpdate(cleanTracks);
+
+            // Nếu có bài bị link hỏng đã được tự sửa -> cập nhật lại Cloud luôn cho tất cả thiết bị
+            if (repaired) {
+              try {
+                await setDoc(playlistDocRef, {
+                  tracks: cleanTracks,
+                  updatedAt: Date.now()
+                });
+              } catch {}
+            }
+            return;
           }
+        }
+
+        // Nếu đang offline (dữ liệu từ cache trống), giữ nguyên playlist cục bộ, không ghi đè lên Cloud
+        if (snapshot.metadata.fromCache) {
+          onUpdate(getStoredPlaylist());
           return;
         }
-      }
 
-      // Nếu đang offline (dữ liệu từ cache trống), giữ nguyên playlist cục bộ, không ghi đè lên Cloud
-      if (snapshot.metadata.fromCache) {
-        onUpdate(getStoredPlaylist());
-        return;
-      }
-
-      // Nếu tài liệu trên Cloud chưa có hoặc rỗng, đồng bộ từ local lên cloud nếu có bài
-      try {
-        const localPlaylist = getStoredPlaylist();
-        if (localPlaylist && localPlaylist.length > 0) {
-          await setDoc(playlistDocRef, {
-            tracks: localPlaylist,
-            updatedAt: Date.now()
-          });
+        // Nếu tài liệu trên Cloud chưa có hoặc rỗng, đồng bộ từ local lên cloud nếu có bài
+        try {
+          const localPlaylist = getStoredPlaylist();
+          if (localPlaylist && localPlaylist.length > 0) {
+            await setDoc(playlistDocRef, {
+              tracks: localPlaylist,
+              updatedAt: Date.now()
+            });
+          }
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, 'shared_data/playlist');
         }
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'shared_data/playlist');
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'shared_data/playlist');
+        // Khi offline hoặc lỗi mạng, dùng dữ liệu từ localStorage
+        onUpdate(getStoredPlaylist());
       }
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.GET, 'shared_data/playlist');
-      // Khi offline hoặc lỗi mạng, dùng dữ liệu từ localStorage
-      onUpdate(getStoredPlaylist());
-    }
+    )
   );
-
-  return unsubscribe;
 };
 
 /* =========================================================================
@@ -352,77 +390,80 @@ export const subscribeToSharedMemories = (
   const memoriesColRef = collection(db, 'memories');
   const metaDocRef = doc(db, 'shared_data', 'meta');
 
-  const unsubscribe = onSnapshot(
-    memoriesColRef,
-    async (snapshot) => {
-      if (!snapshot.empty) {
-        const loaded: Memory[] = [];
-        snapshot.forEach((docSnap) => {
-          const item = docSnap.data() as Memory;
-          if (item && item.id) {
-            loaded.push(item);
+  // Trì hoãn nhẹ 80ms sau khi kết nối Online để các tài liệu nhẹ (tên cặp đôi, font, playlist, nhật ký) đồng bộ trước
+  return subscribeAfterHandshake(
+    () =>
+      onSnapshot(
+        memoriesColRef,
+        async (snapshot) => {
+          if (!snapshot.empty) {
+            const loaded: Memory[] = [];
+            snapshot.forEach((docSnap) => {
+              const item = docSnap.data() as Memory;
+              if (item && item.id) {
+                loaded.push(item);
+              }
+            });
+
+            // Sắp xếp kỷ niệm mới nhất lên đầu
+            loaded.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+            localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
+            saveMemoriesToStorage(loaded);
+            onUpdate(loaded);
+            return;
           }
-        });
 
-        // Sắp xếp kỷ niệm mới nhất lên đầu
-        loaded.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-
-        localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
-        saveMemoriesToStorage(loaded);
-        onUpdate(loaded);
-        return;
-      }
-
-      // Nếu đang offline và cache trống, giữ nguyên bộ nhớ cục bộ, không seed dữ liệu mẫu
-      if (snapshot.metadata.fromCache) {
-        onUpdate(getStoredMemories());
-        return;
-      }
-
-      // Snapshot rỗng (0 documents trên Cloud Firestore)
-      // Kiểm tra xem database đã từng được khởi tạo chưa để TRÁNH tự ý sinh lại kỷ niệm mặc định đã bị xóa
-      let isAlreadyInitialized = localStorage.getItem(MEMORIES_SEEDED_KEY) === 'true';
-
-      if (!isAlreadyInitialized) {
-        try {
-          const metaSnap = await getDoc(metaDocRef);
-          if (metaSnap.exists() && metaSnap.data()?.memoriesSeeded) {
-            isAlreadyInitialized = true;
+          // Nếu đang offline và cache trống, giữ nguyên bộ nhớ cục bộ, không seed dữ liệu mẫu
+          if (snapshot.metadata.fromCache) {
+            onUpdate(getStoredMemories());
+            return;
           }
-        } catch {
-          // Bỏ qua lỗi đọc meta
+
+          // Snapshot rỗng (0 documents trên Cloud Firestore)
+          // Kiểm tra xem database đã từng được khởi tạo chưa để TRÁNH tự ý sinh lại kỷ niệm mặc định đã bị xóa
+          let isAlreadyInitialized = localStorage.getItem(MEMORIES_SEEDED_KEY) === 'true';
+
+          if (!isAlreadyInitialized) {
+            try {
+              const metaSnap = await getDoc(metaDocRef);
+              if (metaSnap.exists() && metaSnap.data()?.memoriesSeeded) {
+                isAlreadyInitialized = true;
+              }
+            } catch {
+              // Bỏ qua lỗi đọc meta
+            }
+          }
+
+          if (isAlreadyInitialized) {
+            // Người dùng đã chủ động xóa hết các kỷ niệm mặc định! Giữ danh sách rỗng, không tự tạo lại
+            saveMemoriesToStorage([]);
+            onUpdate([]);
+            return;
+          }
+
+          // Đây là lần đầu tiên hệ thống chạy trên database mới tinh -> Khởi tạo 12 kỷ niệm mẫu ban đầu
+          localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
+          const initialBatch = INITIAL_MEMORIES.slice(0, 12);
+          saveMemoriesToStorage(initialBatch);
+          onUpdate(initialBatch);
+
+          try {
+            await setDoc(metaDocRef, { memoriesSeeded: true, createdAt: Date.now() }, { merge: true });
+            for (const mem of initialBatch) {
+              await setDoc(doc(db, 'memories', mem.id), mem);
+            }
+          } catch (err) {
+            handleFirestoreError(err, OperationType.WRITE, 'memories');
+          }
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'memories');
+          onUpdate(getStoredMemories());
         }
-      }
-
-      if (isAlreadyInitialized) {
-        // Người dùng đã chủ động xóa hết các kỷ niệm mặc định! Giữ danh sách rỗng, không tự tạo lại
-        saveMemoriesToStorage([]);
-        onUpdate([]);
-        return;
-      }
-
-      // Đây là lần đầu tiên hệ thống chạy trên database mới tinh -> Khởi tạo 12 kỷ niệm mẫu ban đầu
-      localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
-      const initialBatch = INITIAL_MEMORIES.slice(0, 12);
-      saveMemoriesToStorage(initialBatch);
-      onUpdate(initialBatch);
-
-      try {
-        await setDoc(metaDocRef, { memoriesSeeded: true, createdAt: Date.now() }, { merge: true });
-        for (const mem of initialBatch) {
-          await setDoc(doc(db, 'memories', mem.id), mem);
-        }
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'memories');
-      }
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'memories');
-      onUpdate(getStoredMemories());
-    }
+      ),
+    80
   );
-
-  return unsubscribe;
 };
 
 /**
@@ -601,25 +642,25 @@ export const subscribeToSharedFont = (
 ): (() => void) => {
   const fontDocRef = doc(db, 'shared_data', 'typography');
 
-  const unsubscribe = onSnapshot(
-    fontDocRef,
-    (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data && data.font && ['caveat', 'dancing', 'patrick', 'playfair', 'vietnam', 'sans'].includes(data.font)) {
-          try {
-            localStorage.setItem(FONT_KEY, data.font);
-          } catch {}
-          onUpdate(data.font);
+  return subscribeAfterHandshake(() =>
+    onSnapshot(
+      fontDocRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && data.font && ['caveat', 'dancing', 'patrick', 'playfair', 'vietnam', 'sans'].includes(data.font)) {
+            try {
+              localStorage.setItem(FONT_KEY, data.font);
+            } catch {}
+            onUpdate(data.font);
+          }
         }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'shared_data/typography');
       }
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.GET, 'shared_data/typography');
-    }
+    )
   );
-
-  return unsubscribe;
 };
 
 /* =========================================================================
@@ -663,48 +704,48 @@ export const subscribeToSharedCoupleInfo = (
 ): (() => void) => {
   const coupleDocRef = doc(db, 'shared_data', 'couple');
 
-  const unsubscribe = onSnapshot(
-    coupleDocRef,
-    async (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data && data.personOne && data.personTwo) {
-          const info: CoupleInfo = {
-            personOne: data.personOne,
-            personTwo: data.personTwo,
-            startDate: data.startDate || DEFAULT_COUPLE_INFO.startDate,
-            anniversaryNote: data.anniversaryNote || DEFAULT_COUPLE_INFO.anniversaryNote
-          };
-          try {
-            localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
-          } catch {}
-          onUpdate(info);
+  return subscribeAfterHandshake(() =>
+    onSnapshot(
+      coupleDocRef,
+      async (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && data.personOne && data.personTwo) {
+            const info: CoupleInfo = {
+              personOne: data.personOne,
+              personTwo: data.personTwo,
+              startDate: data.startDate || DEFAULT_COUPLE_INFO.startDate,
+              anniversaryNote: data.anniversaryNote || DEFAULT_COUPLE_INFO.anniversaryNote
+            };
+            try {
+              localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
+            } catch {}
+            onUpdate(info);
+            return;
+          }
+        }
+
+        if (snapshot.metadata.fromCache) {
           return;
         }
-      }
 
-      if (snapshot.metadata.fromCache) {
-        return;
+        // Khởi tạo nếu chưa có trên Cloud
+        try {
+          const local = getStoredCoupleInfo();
+          await setDoc(coupleDocRef, {
+            ...local,
+            updatedAt: Date.now()
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, 'shared_data/couple');
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'shared_data/couple');
+        onUpdate(getStoredCoupleInfo());
       }
-
-      // Khởi tạo nếu chưa có trên Cloud
-      try {
-        const local = getStoredCoupleInfo();
-        await setDoc(coupleDocRef, {
-          ...local,
-          updatedAt: Date.now()
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'shared_data/couple');
-      }
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.GET, 'shared_data/couple');
-      onUpdate(getStoredCoupleInfo());
-    }
+    )
   );
-
-  return unsubscribe;
 };
 
 /* =========================================================================
@@ -748,25 +789,27 @@ export const subscribeToSharedBgSettings = (
 ): (() => void) => {
   const bgDocRef = doc(db, 'shared_data', 'background');
 
-  const unsubscribe = onSnapshot(
-    bgDocRef,
-    (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as BackgroundSettings;
-        if (data && data.type) {
-          try {
-            localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(data));
-          } catch {}
-          onUpdate(data);
+  return subscribeAfterHandshake(
+    () =>
+      onSnapshot(
+        bgDocRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data() as BackgroundSettings;
+            if (data && data.type) {
+              try {
+                localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(data));
+              } catch {}
+              onUpdate(data);
+            }
+          }
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.GET, 'shared_data/background');
         }
-      }
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.GET, 'shared_data/background');
-    }
+      ),
+    60
   );
-
-  return unsubscribe;
 };
 
 /* =========================================================================
@@ -808,44 +851,44 @@ export const subscribeToSharedDiary = (
 ): (() => void) => {
   const diaryDocRef = doc(db, 'shared_data', 'diary');
 
-  const unsubscribe = onSnapshot(
-    diaryDocRef,
-    async (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data && Array.isArray(data.entries) && data.entries.length > 0) {
-          try {
-            localStorage.setItem(DIARY_KEY, JSON.stringify(data.entries));
-          } catch {}
-          onUpdate(data.entries);
+  return subscribeAfterHandshake(() =>
+    onSnapshot(
+      diaryDocRef,
+      async (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.entries) && data.entries.length > 0) {
+            try {
+              localStorage.setItem(DIARY_KEY, JSON.stringify(data.entries));
+            } catch {}
+            onUpdate(data.entries);
+            return;
+          }
+        }
+
+        if (snapshot.metadata.fromCache) {
+          onUpdate(getStoredDiaryEntries());
           return;
         }
-      }
 
-      if (snapshot.metadata.fromCache) {
+        // Khởi tạo trên Cloud nếu chưa có
+        const local = getStoredDiaryEntries();
+        onUpdate(local);
+        try {
+          await setDoc(diaryDocRef, {
+            entries: local,
+            updatedAt: Date.now()
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, 'shared_data/diary');
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'shared_data/diary');
         onUpdate(getStoredDiaryEntries());
-        return;
       }
-
-      // Khởi tạo trên Cloud nếu chưa có
-      const local = getStoredDiaryEntries();
-      onUpdate(local);
-      try {
-        await setDoc(diaryDocRef, {
-          entries: local,
-          updatedAt: Date.now()
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'shared_data/diary');
-      }
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.GET, 'shared_data/diary');
-      onUpdate(getStoredDiaryEntries());
-    }
+    )
   );
-
-  return unsubscribe;
 };
 
 /**

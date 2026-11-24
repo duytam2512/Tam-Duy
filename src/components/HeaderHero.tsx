@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Heart, Calendar, Sparkles, Edit3, Clock, FileCode, Palette, BookOpen, Snowflake, Film, Book, Type, PartyPopper, X } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Edit3, Clock, FileCode, Palette, BookOpen, Snowflake, Film, Book, Type, PartyPopper, X, Quote, RefreshCw } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CoupleInfo } from '../types';
 import { BrandLogo } from './BrandLogo';
@@ -7,8 +7,14 @@ import { PWAInstallButton } from './PWAInstallButton';
 import {
   getLoveMilestoneStatus,
   launchMilestoneFireworks,
+  MILESTONE_FIREWORKS_DURATION_MS,
   LoveMilestone
 } from '../utils/loveMilestones';
+import {
+  pickRandomLoveQuote,
+  formatLoveQuoteText,
+  LoveQuote
+} from '../utils/loveQuotes';
 
 interface HeaderHeroProps {
   coupleInfo: CoupleInfo;
@@ -78,8 +84,23 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
   const [timeTogether, setTimeTogether] = useState(() => computeTimeTogether(coupleInfo.startDate));
   const [celebratingMilestone, setCelebratingMilestone] = useState<LoveMilestone | null>(null);
   const [isFireworksActive, setIsFireworksActive] = useState(false);
+  const [loveQuote, setLoveQuote] = useState<LoveQuote>(() => pickRandomLoveQuote());
+  const [isQuoteRefreshing, setIsQuoteRefreshing] = useState(false);
   const fireworksCleanupRef = useRef<(() => void) | null>(null);
   const fireworksActiveTimerRef = useRef<number | null>(null);
+  const quoteRefreshTimerRef = useRef<number | null>(null);
+
+  const handleNextLoveQuote = useCallback(() => {
+    setIsQuoteRefreshing(true);
+    setLoveQuote((prev) => pickRandomLoveQuote(prev.id));
+    if (quoteRefreshTimerRef.current !== null) {
+      window.clearTimeout(quoteRefreshTimerRef.current);
+    }
+    quoteRefreshTimerRef.current = window.setTimeout(() => {
+      setIsQuoteRefreshing(false);
+      quoteRefreshTimerRef.current = null;
+    }, 320);
+  }, []);
 
   useEffect(() => {
     setEditForm(coupleInfo);
@@ -97,6 +118,23 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
 
   const milestoneStatus = getLoveMilestoneStatus(timeTogether.days, coupleInfo.startDate);
 
+  const CELEBRATED_MILESTONES_KEY = 'goc_nho_celebrated_milestones_v2';
+
+  const markMilestoneCelebrated = useCallback((milestoneKey: string) => {
+    try {
+      let celebratedList: string[] = [];
+      const raw = localStorage.getItem(CELEBRATED_MILESTONES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) celebratedList = parsed;
+      }
+      if (!celebratedList.includes(milestoneKey)) {
+        const nextList = [...celebratedList.slice(-24), milestoneKey];
+        localStorage.setItem(CELEBRATED_MILESTONES_KEY, JSON.stringify(nextList));
+      }
+    } catch {}
+  }, []);
+
   const playMilestoneCelebration = useCallback((milestone: LoveMilestone) => {
     if (fireworksCleanupRef.current) {
       fireworksCleanupRef.current();
@@ -111,46 +149,46 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
     fireworksActiveTimerRef.current = window.setTimeout(() => {
       setIsFireworksActive(false);
       fireworksActiveTimerRef.current = null;
-    }, 3200);
+    }, MILESTONE_FIREWORKS_DURATION_MS);
   }, []);
 
-  // Dọn dẹp pháo hoa khi unmount
+  // Dọn dẹp pháo hoa và timer lời nhắn khi unmount
   useEffect(() => {
     return () => {
       if (fireworksCleanupRef.current) fireworksCleanupRef.current();
       if (fireworksActiveTimerRef.current !== null) {
         window.clearTimeout(fireworksActiveTimerRef.current);
       }
+      if (quoteRefreshTimerRef.current !== null) {
+        window.clearTimeout(quoteRefreshTimerRef.current);
+      }
     };
   }, []);
 
-  // Tự động bắn pháo hoa chúc mừng khi đạt cột mốc quan trọng (100 ngày, 200 ngày, 1 năm, 500 ngày, 1000 ngày...)
+  // Tự động bắn pháo hoa toàn màn hình khi đạt cột mốc quan trọng (100 ngày, 200 ngày, 1 năm, 500 ngày, 1000 ngày...)
   useEffect(() => {
     const targetMilestone = milestoneStatus.exactMilestone || milestoneStatus.latestAchieved;
     if (!targetMilestone) return;
 
-    const CELEBRATED_KEY = 'goc_nho_celebrated_milestones_v1';
     const milestoneKey = `${coupleInfo.startDate}:${targetMilestone.days}`;
 
     let celebratedList: string[] = [];
     try {
-      const raw = localStorage.getItem(CELEBRATED_KEY);
+      const raw = localStorage.getItem(CELEBRATED_MILESTONES_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) celebratedList = parsed;
       }
     } catch {}
 
-    // Nếu hôm nay đúng ngày cột mốc: hiện thiệp chúc mừng; nếu chưa từng bắn pháo hoa cho cột mốc này thì tự động bắn!
+    // Nếu hôm nay đúng ngày cột mốc: luôn hiển thị thiệp chúc mừng trên HeaderHero
     if (milestoneStatus.exactMilestone) {
       setCelebratingMilestone(milestoneStatus.exactMilestone);
     }
 
+    // Nếu chưa từng bắn pháo hoa cho cột mốc này thì tự động kích hoạt pháo hoa toàn màn hình
     if (!celebratedList.includes(milestoneKey)) {
-      try {
-        const nextList = [...celebratedList.slice(-24), milestoneKey];
-        localStorage.setItem(CELEBRATED_KEY, JSON.stringify(nextList));
-      } catch {}
+      markMilestoneCelebrated(milestoneKey);
 
       const startTimer = window.setTimeout(() => {
         playMilestoneCelebration(targetMilestone);
@@ -162,6 +200,7 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
     coupleInfo.startDate,
     milestoneStatus.exactMilestone?.days,
     milestoneStatus.latestAchieved?.days,
+    markMilestoneCelebrated,
     playMilestoneCelebration
   ]);
 
@@ -182,8 +221,12 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
 
     const updatedTime = computeTimeTogether(editForm.startDate);
     const updatedMilestone = getLoveMilestoneStatus(updatedTime.days, editForm.startDate);
-    if (updatedMilestone.exactMilestone) {
-      playMilestoneCelebration(updatedMilestone.exactMilestone);
+    const nextCelebration = updatedMilestone.exactMilestone || (
+      editForm.startDate !== coupleInfo.startDate ? updatedMilestone.latestAchieved : null
+    );
+    if (nextCelebration) {
+      markMilestoneCelebrated(`${editForm.startDate}:${nextCelebration.days}`);
+      playMilestoneCelebration(nextCelebration);
     } else {
       triggerLoveShower();
     }
@@ -383,9 +426,15 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
             </span>
           </div>
 
-          {/* Thiệp Chúc Mừng Cột Mốc Quan Trọng (kèm hiệu ứng pháo hoa) */}
+          {/* Thiệp Chúc Mừng Cột Mốc Quan Trọng (kèm hiệu ứng pháo hoa toàn màn hình) */}
           {celebratingMilestone && (
-            <div className="mt-4 max-w-lg mx-auto bg-gradient-to-r from-[#FFF7F2] via-[#FFFDF9] to-[#FFF6EB] border border-[#E8A598]/60 rounded-2xl px-4 py-3 shadow-sm text-left relative animate-fadeIn">
+            <div
+              className={`mt-4 max-w-lg mx-auto bg-gradient-to-r from-[#FFF7F2] via-[#FFFDF9] to-[#FFF6EB] border rounded-2xl px-4 py-3 text-left relative animate-fadeIn transition-all duration-500 ${
+                isFireworksActive
+                  ? 'border-[#F59E0B]/70 ring-2 ring-[#F59E0B]/30 shadow-lg shadow-[#E8A598]/25'
+                  : 'border-[#E8A598]/60 shadow-sm'
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setCelebratingMilestone(null)}
@@ -395,7 +444,13 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
                 <X className="w-3.5 h-3.5" />
               </button>
               <div className="flex items-start gap-3 pr-6">
-                <div className="w-9 h-9 rounded-xl bg-[#E8A598]/20 text-[#D98A76] flex items-center justify-center shrink-0 mt-0.5">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+                    isFireworksActive
+                      ? 'bg-[#F59E0B]/20 text-[#D97706]'
+                      : 'bg-[#E8A598]/20 text-[#D98A76]'
+                  }`}
+                >
                   <PartyPopper className="w-5 h-5" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -442,11 +497,12 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
                 <button
                   type="button"
                   onClick={() => playMilestoneCelebration(milestoneStatus.latestAchieved!)}
-                  className="inline-flex items-center gap-1 text-[#D98A76] hover:text-[#C87D55] font-semibold hover:underline transition-colors cursor-pointer shrink-0 whitespace-nowrap"
-                  title={`Bắn pháo hoa chúc mừng cột mốc ${milestoneStatus.latestAchieved.title}`}
+                  disabled={isFireworksActive}
+                  className="inline-flex items-center gap-1 text-[#D98A76] hover:text-[#C87D55] font-semibold hover:underline transition-colors cursor-pointer disabled:opacity-60 shrink-0 whitespace-nowrap"
+                  title={`Bắn pháo hoa toàn màn hình chúc mừng cột mốc ${milestoneStatus.latestAchieved.title}`}
                 >
                   <PartyPopper className="w-3.5 h-3.5" />
-                  <span>Mừng mốc</span>
+                  <span>{isFireworksActive ? 'Đang bắn...' : 'Mừng mốc'}</span>
                 </button>
               )}
             </div>
@@ -492,6 +548,52 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Lời Nhắn Yêu Thương Ngẫu Nhiên (tự đổi mới mỗi lần tải lại trang) */}
+      <aside
+        aria-label="Lời nhắn yêu thương ngẫu nhiên"
+        className="mt-5 max-w-3xl mx-auto bg-[#FFFDF9]/92 backdrop-blur-xs rounded-2xl border border-[#E8A598]/30 shadow-xs px-5 py-4 sm:px-7 sm:py-5 relative overflow-hidden"
+      >
+        <div
+          className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-gradient-to-b from-[#E8A598] to-[#D98A76]"
+          aria-hidden="true"
+        />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pl-2">
+          <div className="flex items-start gap-3 min-w-0">
+            <Quote
+              className="w-5 h-5 text-[#E8A598] shrink-0 mt-0.5"
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[#D98A76] mb-1">
+                <span>Lời nhắn yêu thương</span>
+                <span aria-hidden="true">·</span>
+                <span className="text-[#8C6D58] font-medium">{loveQuote.mood}</span>
+              </div>
+              <p
+                key={loveQuote.id}
+                className="font-serif-romantic italic text-sm sm:text-base text-[#3D2E28] leading-relaxed animate-fadeIn"
+              >
+                “{formatLoveQuoteText(loveQuote, coupleInfo.personOne, coupleInfo.personTwo)}”
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleNextLoveQuote}
+            className="self-end sm:self-center inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F0] hover:bg-[#F3EAE0] border border-[#8C6D58]/15 text-[#8C6D58] hover:text-[#3D2E28] text-xs font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+            title="Xem một lời nhắn yêu thương ngẫu nhiên khác"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 text-[#D98A76] transition-transform duration-300 ${
+                isQuoteRefreshing ? 'rotate-180' : ''
+              }`}
+            />
+            <span>Lời nhắn khác</span>
+          </button>
+        </div>
+      </aside>
 
       {/* Modal Chỉnh Sửa Thông Tin Cặp Đôi */}
       {isEditing && (
