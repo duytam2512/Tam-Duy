@@ -238,11 +238,18 @@ export const getStoredPlaylist = (): MusicTrack[] => {
  */
 const stripUndefinedFromObject = <T extends Record<string, any>>(obj: T): Record<string, any> =>
   Object.fromEntries(
-    Object.entries(obj).filter(([, value]) => {
-      if (value === undefined) return false;
-      if (typeof value === 'number' && !Number.isFinite(value)) return false;
-      return true;
-    })
+    Object.entries(obj)
+      .filter(([, value]) => {
+        if (value === undefined) return false;
+        if (typeof value === 'number' && !Number.isFinite(value)) return false;
+        return true;
+      })
+      .map(([key, value]) => {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          return [key, stripUndefinedFromObject(value)];
+        }
+        return [key, value];
+      })
   );
 
 export const savePlaylistBoth = async (playlist: MusicTrack[]): Promise<void> => {

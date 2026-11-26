@@ -25,19 +25,33 @@ import {
   Video,
   Film,
   Link2,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Music,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Memory, POPULAR_TAGS, SAMPLE_PHOTO_LIBRARY, CoupleInfo, CaptionFont, FONT_OPTIONS } from '../types';
+import {
+  Memory,
+  MemoryMusic,
+  MusicTrack,
+  POPULAR_TAGS,
+  SAMPLE_PHOTO_LIBRARY,
+  CoupleInfo,
+  CaptionFont,
+  FONT_OPTIONS
+} from '../types';
 import {
   compressImageFile,
   extractVideoMetadataAndThumbnail,
   uploadVideoFile,
   createFallbackVideoPoster,
   formatVideoDuration,
-  getVideoEmbedInfo
+  getVideoEmbedInfo,
+  getStoredPlaylist
 } from '../services/storage';
 import { generateSmartCaptions, extractContextualEmojis, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
+import { resolveMemoryMusicLink, musicTrackToMemoryMusic } from '../utils/memoryMusic';
+import { MemoryMusicBar } from './MemoryMusicBar';
 import { PhotoEditorModal } from './PhotoEditorModal';
 import {
   PhotoEditState,
@@ -118,8 +132,51 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Trạng thái Nhạc nền kỷ niệm (chọn theo link YouTube / Zing MP3 / MP3 / Drive hoặc từ playlist)
+  const [selectedMusic, setSelectedMusic] = useState<MemoryMusic | null>(null);
+  const [musicLinkInput, setMusicLinkInput] = useState<string>('');
+  const [musicCustomTitle, setMusicCustomTitle] = useState<string>('');
+  const [isResolvingMusic, setIsResolvingMusic] = useState<boolean>(false);
+  const [musicError, setMusicError] = useState<string | null>(null);
+  const [showMusicPanel, setShowMusicPanel] = useState<boolean>(true);
+  const [quickPlaylistSongs, setQuickPlaylistSongs] = useState<MusicTrack[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      const stored = getStoredPlaylist().filter((t) => Boolean(t?.url || t?.youtubeId));
+      setQuickPlaylistSongs(stored.slice(0, 6));
+    }
+  }, [isOpen]);
+
+  const handleResolveMusicLink = async () => {
+    const raw = musicLinkInput.trim();
+    if (!raw) {
+      setMusicError('Hãy dán link YouTube, Zing MP3, file .mp3 hoặc nhập tên bài hát nhé!');
+      return;
+    }
+    setMusicError(null);
+    setIsResolvingMusic(true);
+    try {
+      const resolved = await resolveMemoryMusicLink(raw, musicCustomTitle);
+      setSelectedMusic(resolved);
+      setMusicLinkInput('');
+      setMusicCustomTitle('');
+      setShowMusicPanel(true);
+    } catch (err: any) {
+      setMusicError(err?.message || 'Không thể nhận diện đường dẫn nhạc này. Bạn thử link khác nhé!');
+    } finally {
+      setIsResolvingMusic(false);
+    }
+  };
+
+  const handlePickSavedSong = (track: MusicTrack) => {
+    setMusicError(null);
+    setSelectedMusic(musicTrackToMemoryMusic(track));
+    setShowMusicPanel(true);
+  };
 
   // Dọn dẹp Object URL khi đổi hoặc xóa video preview
   useEffect(() => {
@@ -512,6 +569,14 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       const memoryTag = selectedTag || 'Kỷ niệm';
       const memoryDate = date || new Date().toISOString().split('T')[0];
 
+      // Nếu người dùng đã dán link nhạc nhưng bấm Lưu ngay mà chưa bấm "Chọn nhạc" -> tự phân giải luôn
+      let attachedMusic: MemoryMusic | null = selectedMusic;
+      if (!attachedMusic && musicLinkInput.trim()) {
+        setSaveStatusText('Đang nhận diện link nhạc kỷ niệm...');
+        attachedMusic = await resolveMemoryMusicLink(musicLinkInput, musicCustomTitle);
+        setSelectedMusic(attachedMusic);
+      }
+
       if (mediaMode === 'video') {
         let finalVideoUrl = videoLinkInput.trim();
         let finalPoster = videoPosterUrl || createFallbackVideoPoster('Video Kỷ Niệm');
@@ -541,6 +606,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             videoUrl: finalVideoUrl,
             videoDuration: safeDuration,
             imageUrl: finalPoster,
+            ...(attachedMusic ? { music: attachedMusic } : {}),
             date: memoryDate,
             location: memoryLocation,
             caption: caption.trim(),
@@ -555,6 +621,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             mediaType: 'image',
             imageUrl: images[0],
             images: images,
+            ...(attachedMusic ? { music: attachedMusic } : {}),
             date: memoryDate,
             location: memoryLocation,
             caption: caption.trim(),
@@ -568,6 +635,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
           mediaType: 'image' as const,
           imageUrl: imgUrl,
           images: [imgUrl],
+          ...(attachedMusic ? { music: attachedMusic } : {}),
           date: memoryDate,
           location: memoryLocation,
           caption: images.length > 1 ? `${caption.trim()} (Ảnh #${i + 1})` : caption.trim(),
@@ -591,6 +659,11 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       handleClearVideo();
       setCaption('');
       setLocation('');
+      setSelectedMusic(null);
+      setMusicLinkInput('');
+      setMusicCustomTitle('');
+      setMusicError(null);
+      setShowMusicPanel(true);
       setAiSuggestions([]);
       setShowAiPanel(false);
       onClose();
@@ -1228,6 +1301,127 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
                 className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
               />
             </div>
+          </div>
+
+          {/* Nhạc nền cho kỷ niệm (chọn theo link YouTube, Zing MP3, MP3, Google Drive hoặc từ danh sách phát) */}
+          <div className="rounded-2xl bg-[#FAF7F2] border border-[#8C6D58]/15 p-3 sm:p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-[#3D2E28]">
+                <Music className="w-3.5 h-3.5 text-[#D98A76]" />
+                <span>Nhạc đính kèm kỷ niệm (Theo link)</span>
+                {selectedMusic && (
+                  <span className="text-[11px] font-medium text-[#D98A76]">· Đã chọn</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMusicPanel((prev) => !prev)}
+                className="text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] px-2.5 py-1 rounded-lg hover:bg-white/80 transition-colors cursor-pointer"
+              >
+                {showMusicPanel ? 'Thu gọn' : selectedMusic ? 'Đổi bài hát' : '+ Thêm nhạc theo link'}
+              </button>
+            </div>
+
+            {/* Bản xem trước bài nhạc đã chọn (có nút Nghe thử & Gỡ bỏ) */}
+            {selectedMusic && (
+              <MemoryMusicBar
+                music={selectedMusic}
+                playerId="quick-upload-preview"
+                compact
+                onRemove={() => setSelectedMusic(null)}
+              />
+            )}
+
+            {/* Khung dán link nhạc & chọn nhanh */}
+            {showMusicPanel && (
+              <div className="space-y-2.5 pt-0.5">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <Link2 className="w-3.5 h-3.5 text-[#8C6D58] absolute left-3 top-2.5 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={musicLinkInput}
+                      onChange={(e) => {
+                        setMusicLinkInput(e.target.value);
+                        if (musicError) setMusicError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleResolveMusicLink();
+                        }
+                      }}
+                      placeholder="Dán link YouTube, Zing MP3, file .mp3, Drive hoặc gõ tên bài hát..."
+                      className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden text-[#3D2E28]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isResolvingMusic || !musicLinkInput.trim()}
+                    onClick={() => void handleResolveMusicLink()}
+                    className="px-4 py-2 rounded-xl bg-[#E8A598] hover:bg-[#D98A76] text-white text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    {isResolvingMusic ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Đang nhận diện...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Chọn nhạc</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  value={musicCustomTitle}
+                  onChange={(e) => setMusicCustomTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (musicLinkInput.trim()) void handleResolveMusicLink();
+                    }
+                  }}
+                  placeholder="Tên bài hát hiển thị (tùy chọn — để trống sẽ tự lấy theo link)"
+                  className="w-full px-3 py-1.5 text-xs rounded-xl bg-white border border-[#8C6D58]/15 focus:border-[#E8A598] focus:outline-hidden text-[#3D2E28]"
+                />
+
+                {musicError && (
+                  <p className="text-[11px] text-rose-600 font-medium leading-snug">{musicError}</p>
+                )}
+
+                {quickPlaylistSongs.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-[#8C6D58] font-medium block">
+                      Hoặc chọn nhanh từ danh sách nhạc của hai bạn:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {quickPlaylistSongs.map((track) => {
+                        const isPicked = selectedMusic?.url === track.url;
+                        return (
+                          <button
+                            key={track.id}
+                            type="button"
+                            onClick={() => handlePickSavedSong(track)}
+                            className={`max-w-[180px] truncate px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                              isPicked
+                                ? 'bg-[#E8A598] text-white border-[#E8A598]'
+                                : 'bg-white text-[#8C6D58] hover:text-[#3D2E28] border-[#8C6D58]/15 hover:border-[#E8A598]'
+                            }`}
+                            title={`${track.title}${track.artist ? ` - ${track.artist}` : ''}`}
+                          >
+                            {track.title}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Ô viết caption / Nhật ký cảm xúc kèm Trợ lý Gemini AI */}

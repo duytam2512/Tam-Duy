@@ -50,11 +50,13 @@
             window.WebSocket = function (url, protocols) {
               if (
                 protocols === 'vite-hmr' ||
-                (typeof url === 'string' && (url.includes('vite-hmr') || url.includes('token=')))
+                (typeof url === 'string' && (url.includes('vite-hmr') || url.includes('/@vite/')))
               ) {
                 return new DummyViteWS();
               }
-              return new NativeWS(url, protocols);
+              return arguments.length >= 2 && protocols !== undefined
+                ? new NativeWS(url, protocols)
+                : new NativeWS(url);
             };
             window.WebSocket.prototype = NativeWS.prototype;
             window.WebSocket.CONNECTING = 0;

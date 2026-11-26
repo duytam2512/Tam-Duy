@@ -1,3 +1,12 @@
+export interface MemoryMusic {
+  title: string;
+  artist?: string;
+  url: string;
+  isYouTube?: boolean;
+  youtubeId?: string;
+  thumbnail?: string;
+}
+
 export interface Memory {
   id: string;
   imageUrl: string;
@@ -5,6 +14,7 @@ export interface Memory {
   mediaType?: 'image' | 'video'; // Loại nội dung: ảnh hoặc video
   videoUrl?: string; // Đường dẫn video (tải lên máy chủ hoặc link trực tiếp)
   videoDuration?: number; // Thời lượng video tính bằng giây
+  music?: MemoryMusic; // Bài hát đính kèm theo link cho kỷ niệm
   date: string; // YYYY-MM-DD
   location: string;
   caption: string;

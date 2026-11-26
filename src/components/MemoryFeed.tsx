@@ -24,6 +24,7 @@ import confetti from 'canvas-confetti';
 import { Memory, ViewMode, POPULAR_TAGS, CoupleInfo } from '../types';
 import { formatVideoDuration } from '../services/storage';
 import { SmartImage } from './SmartImage';
+import { MemoryMusicBar } from './MemoryMusicBar';
 
 const FIRST_LIKE_FIREWORKS_KEY = 'goc_nho_first_like_fireworks_v1';
 
@@ -574,6 +575,17 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                   <p className={`${fontClass} text-xl sm:text-2xl text-[#3D2E28] leading-snug line-clamp-3`}>
                     "{item.caption}"
                   </p>
+
+                  {/* Nhạc đính kèm kỷ niệm */}
+                  {item.music?.url && (
+                    <div className="mt-3">
+                      <MemoryMusicBar
+                        music={item.music}
+                        playerId={`masonry-${item.id}`}
+                        compact
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -766,6 +778,17 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                       <p className={`${fontClass} text-2xl text-[#3D2E28] leading-relaxed my-2`}>
                         "{item.caption}"
                       </p>
+
+                      {/* Nhạc đính kèm kỷ niệm */}
+                      {item.music?.url && (
+                        <div className="mt-2.5 max-w-md">
+                          <MemoryMusicBar
+                            music={item.music}
+                            playerId={`timeline-${item.id}`}
+                            compact
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* Actions */}

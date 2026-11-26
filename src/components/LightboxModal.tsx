@@ -17,6 +17,7 @@ import {
 import { Memory } from '../types';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
 import { SmartImage } from './SmartImage';
+import { MemoryMusicBar } from './MemoryMusicBar';
 
 interface LightboxModalProps {
   memory: Memory;
@@ -273,6 +274,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           <p className={`${fontClass} text-xl sm:text-2xl text-[#3D2E28] leading-relaxed`}>
             "{memory.caption}"
           </p>
+
+          {memory.music?.url && (
+            <div className="mt-3">
+              <MemoryMusicBar music={memory.music} playerId={`lightbox-${memory.id}`} />
+            </div>
+          )}
         </div>
       </div>
     </div>

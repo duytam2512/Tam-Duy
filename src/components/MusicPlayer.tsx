@@ -51,6 +51,10 @@ import {
   readAudioFileDuration
 } from '../utils/localAudioStore';
 import {
+  MEMORY_MUSIC_PLAY_EVENT,
+  notifyMemoryMusicPlaying
+} from '../utils/memoryMusic';
+import {
   getStoredPlaylist,
   savePlaylistBoth,
   subscribeToSharedPlaylist,
@@ -216,6 +220,9 @@ const MusicPlayerInner: React.FC = () => {
   const wantsToPlayRef = useRef<boolean>(false);
   const ytWatchdogRef = useRef<number | null>(null);
   const playlistLengthRef = useRef<number>(playlist.length);
+  const playlistRef = useRef<MusicTrack[]>(playlist);
+  playlistRef.current = playlist;
+  const playRequestSeqRef = useRef<number>(0);
 
   // Vị trí linh hoạt của máy phát nhạc (Draggable Music Player)
   const widgetRef = useRef<HTMLDivElement>(null);
@@ -404,7 +411,11 @@ const MusicPlayerInner: React.FC = () => {
   const playTrackDirect = useCallback(
     (track: MusicTrack | undefined, shouldPlay: boolean) => {
       if (!track) return;
+      const reqSeq = ++playRequestSeqRef.current;
       wantsToPlayRef.current = shouldPlay;
+      if (shouldPlay) {
+        notifyMemoryMusicPlaying('global-music-player');
+      }
       clearYtWatchdog();
       const effectiveVolume = isMutedRef.current ? 0 : volumeRef.current;
 
@@ -563,6 +574,7 @@ const MusicPlayerInner: React.FC = () => {
           if (shouldPlay) setIsBuffering(true);
           resolveLocalAudioUrl(targetUrl)
             .then((blobUrl) => {
+              if (playRequestSeqRef.current !== reqSeq) return;
               if (blobUrl) {
                 startHtmlAudio(blobUrl);
               } else {
@@ -572,6 +584,7 @@ const MusicPlayerInner: React.FC = () => {
               }
             })
             .catch(() => {
+              if (playRequestSeqRef.current !== reqSeq) return;
               setIsBuffering(false);
               setIsPlaying(false);
               showNotice('Không thể mở tệp âm thanh cá nhân từ bộ nhớ thiết bị.');
@@ -584,9 +597,11 @@ const MusicPlayerInner: React.FC = () => {
             if (shouldPlay) setIsBuffering(true);
             resolveCloudMediaUrl(targetUrl)
               .then((blobUrl) => {
+                if (playRequestSeqRef.current !== reqSeq) return;
                 if (blobUrl) startHtmlAudio(blobUrl);
               })
               .catch(() => {
+                if (playRequestSeqRef.current !== reqSeq) return;
                 setIsBuffering(false);
                 setIsPlaying(false);
                 showNotice('Không thể tải file nhạc từ đám mây lúc này.');
@@ -914,6 +929,28 @@ const MusicPlayerInner: React.FC = () => {
     }
   }, [currentTrack?.id, currentTrack?.url, currentTrack?.youtubeId, currentTrack?.youtubePlaylistId, isYtReady]);
 
+  // Tự động tạm dừng nhạc nền chung khi người dùng bấm phát bài hát đính kèm trên một kỷ niệm
+  useEffect(() => {
+    const handleMemoryMusicPlay = (e: Event) => {
+      const custom = e as CustomEvent<{ playerId?: string }>;
+      if (custom.detail?.playerId && custom.detail.playerId !== 'global-music-player') {
+        wantsToPlayRef.current = false;
+        if (audioRef.current && !audioRef.current.paused) {
+          audioRef.current.pause();
+        }
+        if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+          try {
+            ytPlayerRef.current.pauseVideo();
+          } catch {}
+        }
+        setIsPlaying(false);
+        setIsBuffering(false);
+      }
+    };
+    window.addEventListener(MEMORY_MUSIC_PLAY_EVENT, handleMemoryMusicPlay);
+    return () => window.removeEventListener(MEMORY_MUSIC_PLAY_EVENT, handleMemoryMusicPlay);
+  }, []);
+
   const handleSeek = (nextSec: number) => {
     if (!Number.isFinite(nextSec) || nextSec < 0) return;
     setCurrentTime(nextSec);
@@ -1114,7 +1151,8 @@ const MusicPlayerInner: React.FC = () => {
       }
 
       if (addedSongs.length > 0) {
-        const updated = [...addedSongs, ...playlist];
+        const latestPlaylist = playlistRef.current;
+        const updated = [...addedSongs, ...latestPlaylist];
         setPlaylist(updated);
         await savePlaylistBoth(updated);
 
@@ -1289,18 +1327,20 @@ const MusicPlayerInner: React.FC = () => {
     let updatedPlaylist: MusicTrack[];
     let targetIdx: number;
 
+    const latestPlaylist = playlistRef.current;
+
     if (mode === 'replace') {
       updatedPlaylist = incomingTracks;
       targetIdx = 0;
     } else {
-      const existingById = new Map(playlist.map((t) => [t.id, t]));
+      const existingById = new Map(latestPlaylist.map((t) => [t.id, t]));
       const freshTracks = incomingTracks.filter((t) => !existingById.has(t.id));
       if (freshTracks.length === 0) {
-        const firstExistingIdx = playlist.findIndex((t) => t.id === incomingTracks[0].id);
-        updatedPlaylist = playlist;
+        const firstExistingIdx = latestPlaylist.findIndex((t) => t.id === incomingTracks[0].id);
+        updatedPlaylist = latestPlaylist;
         targetIdx = firstExistingIdx >= 0 ? firstExistingIdx : 0;
       } else {
-        updatedPlaylist = [...freshTracks, ...playlist];
+        updatedPlaylist = [...freshTracks, ...latestPlaylist];
         targetIdx = 0;
       }
     }
