@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { HeaderHero } from './components/HeaderHero';
 import { QuickUploadForm } from './components/QuickUploadForm';
 import { MemoryFeed } from './components/MemoryFeed';
@@ -29,10 +29,12 @@ import {
 } from './types';
 import {
   getStoredMemories,
+  getCachedMemoriesAsync,
   saveMemoriesToStorage,
   getStoredCoupleInfo,
   saveCoupleInfoBoth,
   getStoredBackgroundSettings,
+  getCachedBackgroundSettingsAsync,
   saveBackgroundSettingsBoth,
   subscribeToSharedMemories,
   saveSharedMemory,
@@ -88,10 +90,29 @@ export function App() {
     });
   };
 
-  // Đồng bộ thời gian thực từ Cloud Firestore & liên tab (hoạt động trên cả Laptop, Cốc Cốc, Điện thoại, v.v.)
+  const hasCloudMemoriesRef = useRef(false);
+  const hasCloudBgRef = useRef(false);
+
+  // Đồng bộ thời gian thực từ Cloud Firestore, IndexedDB & liên tab (hoạt động trên cả Laptop, Cốc Cốc, Điện thoại, v.v.)
   useEffect(() => {
+    let cancelled = false;
+
+    // Nạp ngay toàn bộ kỷ niệm & ảnh nền đầy đủ từ IndexedDB (nếu Cloud Firestore chưa trả về bản mới hơn)
+    void getCachedMemoriesAsync().then((cached) => {
+      if (!cancelled && !hasCloudMemoriesRef.current && Array.isArray(cached)) {
+        setMemories(cached);
+      }
+    });
+
+    void getCachedBackgroundSettingsAsync().then((cachedBg) => {
+      if (!cancelled && !hasCloudBgRef.current && cachedBg && cachedBg.type) {
+        setBackgroundSettings(cachedBg);
+      }
+    });
+
     const unsubMemories = subscribeToSharedMemories((sharedMemories) => {
       if (Array.isArray(sharedMemories)) {
+        hasCloudMemoriesRef.current = true;
         setMemories(sharedMemories);
       }
     });
@@ -104,6 +125,7 @@ export function App() {
 
     const unsubBg = subscribeToSharedBgSettings((sharedBg) => {
       if (sharedBg) {
+        hasCloudBgRef.current = true;
         setBackgroundSettings(sharedBg);
       }
     });
@@ -122,11 +144,19 @@ export function App() {
 
     // Lắng nghe sự kiện đồng bộ tức thì giữa các tab / cửa sổ trình duyệt trên cùng thiết bị
     const handleStorageEvent = (e: StorageEvent) => {
-      if (e.key === 'goc_nho_binh_yen_memories_v3' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setMemories(parsed);
-        } catch {}
+      if (e.key === 'goc_nho_binh_yen_memories_v3') {
+        // Ưu tiên đọc bản đầy đủ từ IndexedDB để tránh ghi đè bằng bản xem trước rút gọn trong localStorage
+        void getCachedMemoriesAsync().then((cached) => {
+          if (cancelled) return;
+          if (Array.isArray(cached)) {
+            setMemories(cached);
+          } else if (e.newValue) {
+            try {
+              const parsed = JSON.parse(e.newValue);
+              if (Array.isArray(parsed)) setMemories(parsed);
+            } catch {}
+          }
+        });
       }
       if (e.key === 'goc_nho_binh_yen_couple_v3' && e.newValue) {
         try {
@@ -134,11 +164,19 @@ export function App() {
           if (parsed && parsed.personOne) setCoupleInfo(parsed);
         } catch {}
       }
-      if (e.key === 'goc_nho_binh_yen_bg_v3' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (parsed && parsed.type) setBackgroundSettings(parsed);
-        } catch {}
+      if (e.key === 'goc_nho_binh_yen_bg_v3') {
+        if (e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            if (parsed && parsed.type) setBackgroundSettings(parsed);
+          } catch {}
+        } else {
+          void getCachedBackgroundSettingsAsync().then((cachedBg) => {
+            if (!cancelled && cachedBg && cachedBg.type) {
+              setBackgroundSettings(cachedBg);
+            }
+          });
+        }
       }
       if (e.key === 'goc_nho_binh_yen_diary_v1' && e.newValue) {
         try {
@@ -156,6 +194,7 @@ export function App() {
     window.addEventListener('storage', handleStorageEvent);
 
     return () => {
+      cancelled = true;
       unsubMemories();
       unsubCouple();
       unsubBg();

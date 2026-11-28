@@ -33,7 +33,13 @@ export class AppErrorBoundary extends React.Component<
   handleResetCacheAndReload = () => {
     try {
       localStorage.removeItem('goc_nho_binh_yen_memories_v3');
+      localStorage.removeItem('goc_nho_binh_yen_bg_v3');
       localStorage.removeItem('goc_nho_playlist');
+    } catch {}
+    try {
+      if (typeof indexedDB !== 'undefined') {
+        indexedDB.deleteDatabase('goc_nho_app_cache_v1');
+      }
     } catch {}
     window.location.reload();
   };

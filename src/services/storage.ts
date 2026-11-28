@@ -77,6 +77,116 @@ const BG_SETTINGS_KEY = 'goc_nho_binh_yen_bg_v3';
 const DIARY_KEY = 'goc_nho_binh_yen_diary_v1';
 const FONT_KEY = 'goc_nho_font_family_v1';
 
+// Bộ nhớ đệm IndexedDB dung lượng lớn (tránh tràn giới hạn ~5MB của localStorage khi có nhiều ảnh kỷ niệm)
+const APP_CACHE_DB_NAME = 'goc_nho_app_cache_v1';
+const APP_CACHE_DB_VERSION = 1;
+const APP_CACHE_STORE = 'kv';
+const MAX_LS_MEMORIES_CHARS = 1_400_000; // ~1.4MB bản xem trước trong localStorage để dành chỗ cho các cài đặt khác
+const MAX_LS_BG_CHARS = 350_000; // Ảnh nền lớn (>350KB) chỉ lưu trong IndexedDB + Cloud Firestore
+
+let appCacheDbPromise: Promise<IDBDatabase | null> | null = null;
+
+const openAppCacheDb = (): Promise<IDBDatabase | null> => {
+  if (typeof indexedDB === 'undefined') {
+    return Promise.resolve(null);
+  }
+  if (!appCacheDbPromise) {
+    appCacheDbPromise = new Promise<IDBDatabase | null>((resolve) => {
+      try {
+        const request = indexedDB.open(APP_CACHE_DB_NAME, APP_CACHE_DB_VERSION);
+        request.onupgradeneeded = () => {
+          const idb = request.result;
+          if (!idb.objectStoreNames.contains(APP_CACHE_STORE)) {
+            idb.createObjectStore(APP_CACHE_STORE, { keyPath: 'key' });
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+        request.onblocked = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+  return appCacheDbPromise;
+};
+
+const saveCacheToIdb = async (key: string, value: unknown): Promise<void> => {
+  const idb = await openAppCacheDb();
+  if (!idb) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = idb.transaction(APP_CACHE_STORE, 'readwrite');
+      const store = tx.objectStore(APP_CACHE_STORE);
+      store.put({ key, value, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+};
+
+const getCacheFromIdb = async <T>(key: string): Promise<T | null> => {
+  const idb = await openAppCacheDb();
+  if (!idb) return null;
+  return new Promise<T | null>((resolve) => {
+    try {
+      const tx = idb.transaction(APP_CACHE_STORE, 'readonly');
+      const store = tx.objectStore(APP_CACHE_STORE);
+      const req = store.get(key);
+      req.onsuccess = () => {
+        const record = req.result as { key: string; value: T } | undefined;
+        resolve(record && 'value' in record ? record.value : null);
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+};
+
+const safeLocalStorageRemove = (key: string): void => {
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+};
+
+const safeLocalStorageSet = (key: string, value: string, allowEvictLargeCache = true): boolean => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    if (!allowEvictLargeCache) return false;
+    // Nếu localStorage đang bị đầy bởi bản cache ảnh cũ, giải phóng key lớn (đã có trong IndexedDB & Firestore) rồi thử lại
+    try {
+      const bgRaw = localStorage.getItem(BG_SETTINGS_KEY);
+      if (key !== BG_SETTINGS_KEY && bgRaw && bgRaw.length > MAX_LS_BG_CHARS) {
+        localStorage.removeItem(BG_SETTINGS_KEY);
+      }
+      if (key !== MEMORIES_KEY) {
+        localStorage.removeItem(MEMORIES_KEY);
+      }
+      localStorage.setItem(key, value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
+
+export const getCachedMemoriesAsync = async (): Promise<Memory[] | null> => {
+  const cached = await getCacheFromIdb<Memory[]>(MEMORIES_KEY);
+  return Array.isArray(cached) ? cached : null;
+};
+
+export const getCachedBackgroundSettingsAsync = async (): Promise<BackgroundSettings | null> => {
+  const cached = await getCacheFromIdb<BackgroundSettings>(BG_SETTINGS_KEY);
+  return cached && typeof cached === 'object' && 'type' in cached ? cached : null;
+};
+
+
 // Helper enum và xử lý lỗi theo chuẩn Firebase Skill
 export enum OperationType {
   CREATE = 'create',
@@ -257,11 +367,7 @@ export const savePlaylistBoth = async (playlist: MusicTrack[]): Promise<void> =>
   const { tracks: cleanTracks } = sanitizePlaylistTracks(playlist);
   const firestoreSafeTracks = cleanTracks.map((t) => stripUndefinedFromObject(t)) as MusicTrack[];
   // 1. Lưu ngay vào localStorage của thiết bị hiện tại
-  try {
-    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(firestoreSafeTracks));
-  } catch (err) {
-    console.warn('Lỗi lưu playlist vào localStorage:', err);
-  }
+  safeLocalStorageSet(PLAYLIST_KEY, JSON.stringify(firestoreSafeTracks));
 
   // 2. Đồng bộ lên Firestore để các thiết bị khác nhận được ngay lập tức
   try {
@@ -292,11 +398,7 @@ export const subscribeToSharedPlaylist = (
           if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
             const { tracks: cleanTracks, repaired } = sanitizePlaylistTracks(data.tracks);
             // Cập nhật localStorage để lưu offline
-            try {
-              localStorage.setItem(PLAYLIST_KEY, JSON.stringify(cleanTracks));
-            } catch (e) {
-              console.warn('Lỗi cache playlist:', e);
-            }
+            safeLocalStorageSet(PLAYLIST_KEY, JSON.stringify(cleanTracks));
             onUpdate(cleanTracks);
 
             // Nếu có bài bị link hỏng đã được tự sửa -> cập nhật lại Cloud luôn cho tất cả thiết bị
@@ -356,8 +458,8 @@ export const getStoredMemories = (): Memory[] => {
     // Chỉ khởi tạo 12 kỷ niệm mẫu ban đầu nếu máy CHƯA TỪNG được đánh dấu khởi tạo
     const isSeeded = localStorage.getItem(MEMORIES_SEEDED_KEY);
     if (!isSeeded) {
-      localStorage.setItem(MEMORIES_KEY, JSON.stringify(INITIAL_MEMORIES));
-      localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
+      safeLocalStorageSet(MEMORIES_KEY, JSON.stringify(INITIAL_MEMORIES), false);
+      safeLocalStorageSet(MEMORIES_SEEDED_KEY, 'true');
       return INITIAL_MEMORIES;
     }
     return [];
@@ -367,24 +469,92 @@ export const getStoredMemories = (): Memory[] => {
   }
 };
 
+/**
+ * Thu gọn bản ghi kỷ niệm cho lớp cache nhanh localStorage (loại bỏ ảnh base64 bị nhân đôi giữa imageUrl & images[0]).
+ * Toàn bộ dữ liệu gốc đầy đủ ảnh album luôn được lưu trọn vẹn trong IndexedDB và Cloud Firestore.
+ */
+const shrinkMemoryForLocalStorage = (memory: Memory): Memory => {
+  if (!Array.isArray(memory.images) || memory.images.length === 0) {
+    return memory;
+  }
+
+  // Trường hợp phổ biến nhất: album 1 ảnh bị nhân đôi y hệt imageUrl -> bỏ mảng images trong localStorage để giảm 50% dung lượng
+  if (memory.images.length === 1 && memory.images[0] === memory.imageUrl) {
+    const { images: _ignored, ...rest } = memory;
+    return rest;
+  }
+
+  // Với album nhiều ảnh, chỉ giữ ảnh bìa (nếu khác imageUrl) và các đường dẫn không phải base64 data:
+  const lightImages = memory.images.filter((img, idx) => {
+    if (!img) return false;
+    if (!img.startsWith('data:')) return true;
+    return idx === 0 && img !== memory.imageUrl;
+  });
+
+  if (lightImages.length === 0) {
+    const { images: _ignored, ...rest } = memory;
+    return rest;
+  }
+
+  return {
+    ...memory,
+    images: lightImages
+  };
+};
+
 export const saveMemoriesToStorage = (memories: Memory[]): void => {
-  try {
-    localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories));
-  } catch (error) {
-    // Khi lưu nhiều ảnh (10+ ảnh), localStorage (giới hạn ~5MB) có thể đầy -> lưu bản nhẹ giữ metadata & ảnh bìa, dữ liệu đầy đủ đã có trên Firestore & IndexedDB
+  // 1. Luôn lưu toàn bộ danh sách kỷ niệm đầy đủ vào IndexedDB (dung lượng hàng trăm MB, không bao giờ tràn 5MB)
+  void saveCacheToIdb(MEMORIES_KEY, memories);
+
+  // 2. Lưu bản xem trước nhẹ vào localStorage trong ngân sách an toàn (~1.4MB) để mở web hiển thị tức thì
+  if (memories.length === 0) {
+    safeLocalStorageSet(MEMORIES_KEY, '[]', false);
+    return;
+  }
+
+  const packed: Memory[] = [];
+  let usedChars = 2; // "[]"
+
+  for (const mem of memories) {
+    const shrunk = shrinkMemoryForLocalStorage(mem);
+    let serializedItem = '';
     try {
-      const compact = memories.slice(0, 40).map((m) => ({
-        ...m,
-        images: m.images && m.images.length > 1
-          ? m.images.map((img, i) => (i === 0 || !img.startsWith('data:') ? img : ''))
-              .filter(Boolean)
-          : m.images
-      }));
-      localStorage.setItem(MEMORIES_KEY, JSON.stringify(compact));
+      serializedItem = JSON.stringify(shrunk);
     } catch {
-      console.warn('Bộ nhớ đệm trình duyệt đã đầy, dữ liệu vẫn được đồng bộ an toàn trên Cloud Firestore:', error);
+      continue;
+    }
+    const nextSize = usedChars + serializedItem.length + (packed.length > 0 ? 1 : 0);
+    if (nextSize <= MAX_LS_MEMORIES_CHARS) {
+      packed.push(shrunk);
+      usedChars = nextSize;
+    } else {
+      break;
     }
   }
+
+  // Dọn ảnh nền lớn đang chiếm localStorage (nếu có) trước khi ghi bản xem trước kỷ niệm
+  try {
+    const bgRaw = localStorage.getItem(BG_SETTINGS_KEY);
+    if (bgRaw && bgRaw.length > MAX_LS_BG_CHARS) {
+      localStorage.removeItem(BG_SETTINGS_KEY);
+    }
+  } catch {}
+
+  let candidate = packed;
+  while (candidate.length > 0) {
+    try {
+      localStorage.setItem(MEMORIES_KEY, JSON.stringify(candidate));
+      return;
+    } catch {
+      // Nếu trình duyệt cấp quota thấp hơn bình thường, tự động giảm dần số lượng bản xem trước trong im lặng
+      // (toàn bộ dữ liệu đầy đủ đã được lưu an toàn trong IndexedDB và Cloud Firestore)
+      const nextCount = candidate.length > 1 ? Math.floor(candidate.length / 2) : 0;
+      candidate = candidate.slice(0, nextCount);
+    }
+  }
+
+  // Nếu quota localStorage đã quá chật, bỏ qua cache localStorage để dành chỗ cho cài đặt nhẹ (IndexedDB + Cloud vẫn đầy đủ)
+  safeLocalStorageRemove(MEMORIES_KEY);
 };
 
 /**
@@ -416,21 +586,25 @@ export const subscribeToSharedMemories = (
             // Sắp xếp kỷ niệm mới nhất lên đầu
             loaded.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-            localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
+            safeLocalStorageSet(MEMORIES_SEEDED_KEY, 'true');
             saveMemoriesToStorage(loaded);
             onUpdate(loaded);
             return;
           }
 
-          // Nếu đang offline và cache trống, giữ nguyên bộ nhớ cục bộ, không seed dữ liệu mẫu
+          // Nếu đang offline và cache Firestore trống, đọc đầy đủ từ IndexedDB trước rồi mới fallback localStorage
           if (snapshot.metadata.fromCache) {
-            onUpdate(getStoredMemories());
+            const idbCached = await getCachedMemoriesAsync();
+            onUpdate(idbCached !== null ? idbCached : getStoredMemories());
             return;
           }
 
           // Snapshot rỗng (0 documents trên Cloud Firestore)
           // Kiểm tra xem database đã từng được khởi tạo chưa để TRÁNH tự ý sinh lại kỷ niệm mặc định đã bị xóa
-          let isAlreadyInitialized = localStorage.getItem(MEMORIES_SEEDED_KEY) === 'true';
+          let isAlreadyInitialized = false;
+          try {
+            isAlreadyInitialized = localStorage.getItem(MEMORIES_SEEDED_KEY) === 'true';
+          } catch {}
 
           if (!isAlreadyInitialized) {
             try {
@@ -451,7 +625,7 @@ export const subscribeToSharedMemories = (
           }
 
           // Đây là lần đầu tiên hệ thống chạy trên database mới tinh -> Khởi tạo 12 kỷ niệm mẫu ban đầu
-          localStorage.setItem(MEMORIES_SEEDED_KEY, 'true');
+          safeLocalStorageSet(MEMORIES_SEEDED_KEY, 'true');
           const initialBatch = INITIAL_MEMORIES.slice(0, 12);
           saveMemoriesToStorage(initialBatch);
           onUpdate(initialBatch);
@@ -467,7 +641,9 @@ export const subscribeToSharedMemories = (
         },
         (error) => {
           handleFirestoreError(error, OperationType.LIST, 'memories');
-          onUpdate(getStoredMemories());
+          void getCachedMemoriesAsync().then((idbCached) => {
+            onUpdate(idbCached !== null ? idbCached : getStoredMemories());
+          });
         }
       ),
     80
@@ -654,11 +830,7 @@ export const getStoredFont = (): CaptionFont => {
 };
 
 export const saveFontBoth = async (font: CaptionFont): Promise<void> => {
-  try {
-    localStorage.setItem(FONT_KEY, font);
-  } catch (err) {
-    console.warn('Lỗi lưu font vào localStorage:', err);
-  }
+  safeLocalStorageSet(FONT_KEY, font);
 
   try {
     const fontDocRef = doc(db, 'shared_data', 'typography');
@@ -683,9 +855,7 @@ export const subscribeToSharedFont = (
         if (snapshot.exists()) {
           const data = snapshot.data();
           if (data && data.font && ['caveat', 'dancing', 'patrick', 'playfair', 'vietnam', 'sans'].includes(data.font)) {
-            try {
-              localStorage.setItem(FONT_KEY, data.font);
-            } catch {}
+            safeLocalStorageSet(FONT_KEY, data.font);
             onUpdate(data.font);
           }
         }
@@ -705,7 +875,7 @@ export const getStoredCoupleInfo = (): CoupleInfo => {
   try {
     const raw = localStorage.getItem(COUPLE_KEY);
     if (!raw) {
-      localStorage.setItem(COUPLE_KEY, JSON.stringify(DEFAULT_COUPLE_INFO));
+      safeLocalStorageSet(COUPLE_KEY, JSON.stringify(DEFAULT_COUPLE_INFO));
       return DEFAULT_COUPLE_INFO;
     }
     return JSON.parse(raw);
@@ -716,11 +886,7 @@ export const getStoredCoupleInfo = (): CoupleInfo => {
 };
 
 export const saveCoupleInfoBoth = async (info: CoupleInfo): Promise<void> => {
-  try {
-    localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
-  } catch (error) {
-    console.warn('Lỗi khi lưu couple info:', error);
-  }
+  safeLocalStorageSet(COUPLE_KEY, JSON.stringify(info));
 
   try {
     const coupleDocRef = doc(db, 'shared_data', 'couple');
@@ -751,9 +917,7 @@ export const subscribeToSharedCoupleInfo = (
               startDate: data.startDate || DEFAULT_COUPLE_INFO.startDate,
               anniversaryNote: data.anniversaryNote || DEFAULT_COUPLE_INFO.anniversaryNote
             };
-            try {
-              localStorage.setItem(COUPLE_KEY, JSON.stringify(info));
-            } catch {}
+            safeLocalStorageSet(COUPLE_KEY, JSON.stringify(info));
             onUpdate(info);
             return;
           }
@@ -786,11 +950,28 @@ export const subscribeToSharedCoupleInfo = (
    4. QUẢN LÝ HÌNH NỀN WEB (BACKGROUND SETTINGS)
    ========================================================================= */
 
+const cacheBackgroundSettingsLocally = (settings: BackgroundSettings): void => {
+  // Luôn lưu đầy đủ (kể cả ảnh nền dung lượng lớn) vào IndexedDB
+  void saveCacheToIdb(BG_SETTINGS_KEY, settings);
+
+  // Chỉ ghi localStorage nếu nhỏ gọn dưới 350KB để không chiếm dung lượng của kỷ niệm & cài đặt khác
+  try {
+    const serialized = JSON.stringify(settings);
+    if (serialized.length <= MAX_LS_BG_CHARS) {
+      safeLocalStorageSet(BG_SETTINGS_KEY, serialized, false);
+    } else {
+      safeLocalStorageRemove(BG_SETTINGS_KEY);
+    }
+  } catch {
+    safeLocalStorageRemove(BG_SETTINGS_KEY);
+  }
+};
+
 export const getStoredBackgroundSettings = (): BackgroundSettings => {
   try {
     const raw = localStorage.getItem(BG_SETTINGS_KEY);
     if (!raw) {
-      localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(DEFAULT_BG_SETTINGS));
+      safeLocalStorageSet(BG_SETTINGS_KEY, JSON.stringify(DEFAULT_BG_SETTINGS), false);
       return DEFAULT_BG_SETTINGS;
     }
     return JSON.parse(raw);
@@ -801,11 +982,7 @@ export const getStoredBackgroundSettings = (): BackgroundSettings => {
 };
 
 export const saveBackgroundSettingsBoth = async (settings: BackgroundSettings): Promise<void> => {
-  try {
-    localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(settings));
-  } catch (error) {
-    console.warn('Lỗi khi lưu background settings:', error);
-  }
+  cacheBackgroundSettingsLocally(settings);
 
   try {
     const bgDocRef = doc(db, 'shared_data', 'background');
@@ -831,9 +1008,7 @@ export const subscribeToSharedBgSettings = (
           if (snapshot.exists()) {
             const data = snapshot.data() as BackgroundSettings;
             if (data && data.type) {
-              try {
-                localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(data));
-              } catch {}
+              cacheBackgroundSettingsLocally(data);
               onUpdate(data);
             }
           }
@@ -863,11 +1038,7 @@ export const getStoredDiaryEntries = (): DiaryEntry[] => {
 };
 
 export const saveDiaryEntriesBoth = async (entries: DiaryEntry[]): Promise<void> => {
-  try {
-    localStorage.setItem(DIARY_KEY, JSON.stringify(entries));
-  } catch (err) {
-    console.warn('Lỗi lưu sổ tay vào localStorage:', err);
-  }
+  safeLocalStorageSet(DIARY_KEY, JSON.stringify(entries));
 
   try {
     const diaryDocRef = doc(db, 'shared_data', 'diary');
@@ -892,9 +1063,7 @@ export const subscribeToSharedDiary = (
         if (snapshot.exists()) {
           const data = snapshot.data();
           if (data && Array.isArray(data.entries) && data.entries.length > 0) {
-            try {
-              localStorage.setItem(DIARY_KEY, JSON.stringify(data.entries));
-            } catch {}
+            safeLocalStorageSet(DIARY_KEY, JSON.stringify(data.entries));
             onUpdate(data.entries);
             return;
           }
