@@ -18,6 +18,17 @@ import { Memory } from '../types';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
 import { SmartImage } from './SmartImage';
 import { MemoryMusicBar } from './MemoryMusicBar';
+import { getMemoryTags } from '../utils/memoryTags';
+
+const formatSafeDate = (dateStr?: string): string => {
+  if (!dateStr) return 'Không rõ ngày';
+  const match = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsed = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(dateStr);
+  if (!Number.isFinite(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString('vi-VN');
+};
 
 interface LightboxModalProps {
   memory: Memory;
@@ -80,7 +91,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       <div className="absolute top-4 left-4 right-4 flex items-center justify-between text-white z-20">
         <div className="flex items-center gap-2 bg-black/40 backdrop-blur-sm px-3.5 py-1.5 rounded-full text-xs">
           <Calendar className="w-3.5 h-3.5 text-[#E8A598]" />
-          <span>{new Date(memory.date).toLocaleDateString('vi-VN')}</span>
+          <span>{formatSafeDate(memory.date)}</span>
           {memory.location && (
             <>
               <span className="text-white/40">•</span>
@@ -236,21 +247,25 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         {/* Bottom Caption Card */}
         <div className="mt-3 bg-[#FFFDF9]/95 text-[#3D2E28] p-4 sm:p-5 rounded-2xl max-w-xl w-full border border-[#8C6D58]/20 shadow-xl backdrop-blur-md">
           <div className="flex items-center justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#D98A76] bg-[#E8A598]/15 px-2.5 py-0.5 rounded-full">
-                <Tag className="w-3 h-3" />
-                {memory.tag || 'Kỷ niệm'}
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#8C6D58]">
+              <span className="inline-flex items-center gap-1 font-semibold text-[#D98A76]">
+                <Tag className="w-3 h-3 shrink-0" />
+                <span>{getMemoryTags(memory).join(' · ')}</span>
               </span>
 
               {isVideo ? (
-                <span className="inline-flex items-center gap-1 text-[11px] text-[#3D2E28] font-semibold bg-[#F9F6F0] px-2.5 py-0.5 rounded-full">
-                  <Video className="w-3 h-3 text-[#D98A76]" />
-                  Video kỷ niệm
-                </span>
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="inline-flex items-center gap-1 text-[#3D2E28] font-medium">
+                    <Video className="w-3 h-3 text-[#D98A76]" />
+                    Video kỷ niệm
+                  </span>
+                </>
               ) : albumImages.length > 1 ? (
-                <span className="text-[11px] text-[#8C6D58] font-medium bg-[#F9F6F0] px-2 py-0.5 rounded-full">
-                  Album ({albumImages.length} ảnh)
-                </span>
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>Album ({albumImages.length} ảnh)</span>
+                </>
               ) : null}
             </div>
 

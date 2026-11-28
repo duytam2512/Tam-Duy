@@ -18,13 +18,25 @@ import {
   Video,
   Play,
   Maximize2,
-  RotateCw
+  RotateCw,
+  Plus,
+  X,
+  Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Memory, ViewMode, POPULAR_TAGS, CoupleInfo } from '../types';
+import { Memory, ViewMode, CoupleInfo } from '../types';
 import { formatVideoDuration } from '../services/storage';
 import { SmartImage } from './SmartImage';
 import { MemoryMusicBar } from './MemoryMusicBar';
+import {
+  getMemoryTags,
+  memoryHasTag,
+  buildTagFilterStats,
+  PRESET_MEMORY_TAGS,
+  MAX_TAGS_PER_MEMORY,
+  normalizeTagName,
+  dedupeTags
+} from '../utils/memoryTags';
 
 const FIRST_LIKE_FIREWORKS_KEY = 'goc_nho_first_like_fireworks_v1';
 
@@ -71,6 +83,7 @@ interface MemoryFeedProps {
   coupleInfo: CoupleInfo;
   onToggleLike: (id: string) => void;
   onDeleteMemory: (id: string) => void;
+  onUpdateMemoryTags?: (id: string, tags: string[]) => Promise<void> | void;
   onOpenLightbox: (memory: Memory) => void;
   onOpenShare: (memory: Memory) => void;
   onOpenQuickUpload: () => void;
@@ -83,6 +96,7 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
   coupleInfo,
   onToggleLike,
   onDeleteMemory,
+  onUpdateMemoryTags,
   onOpenLightbox,
   onOpenShare,
   onOpenQuickUpload,
@@ -95,6 +109,11 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
   const [selectedYear, setSelectedYear] = useState('all');
   const [mediaFilter, setMediaFilter] = useState<'all' | 'video'>('all');
   const [memoryToDelete, setMemoryToDelete] = useState<Memory | null>(null);
+  const [editingTagsMemory, setEditingTagsMemory] = useState<Memory | null>(null);
+  const [draftTags, setDraftTags] = useState<string[]>([]);
+  const [draftCustomTag, setDraftCustomTag] = useState('');
+  const [isSavingTags, setIsSavingTags] = useState(false);
+  const [tagSaveError, setTagSaveError] = useState<string | null>(null);
   const [flippedMemoryId, setFlippedMemoryId] = useState<string | null>(null);
   const lastPointerTypeRef = useRef<string>('mouse');
   const [heartAnimMap, setHeartAnimMap] = useState<Record<string, { seq: number; liked: boolean }>>({});
@@ -246,6 +265,92 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
     [memories]
   );
 
+  // Thống kê toàn bộ thẻ (preset như Du lịch, Hẹn hò, Ngày lễ + thẻ tùy chỉnh) kèm số lượng kỷ niệm
+  const tagFilterStats = useMemo(() => buildTagFilterStats(memories), [memories]);
+
+  const openTagEditor = (memory: Memory) => {
+    setEditingTagsMemory(memory);
+    setDraftTags(getMemoryTags(memory));
+    setDraftCustomTag('');
+    setTagSaveError(null);
+  };
+
+  const toggleDraftTag = (tagName: string) => {
+    const normalized = normalizeTagName(tagName);
+    if (!normalized) return;
+    setDraftTags((prev) => {
+      const exists = prev.some((t) => t.toLowerCase() === normalized.toLowerCase());
+      if (exists) {
+        return prev.length > 1
+          ? prev.filter((t) => t.toLowerCase() !== normalized.toLowerCase())
+          : prev;
+      }
+      if (prev.length >= MAX_TAGS_PER_MEMORY) {
+        return [...prev.slice(0, MAX_TAGS_PER_MEMORY - 1), normalized];
+      }
+      return [...prev, normalized];
+    });
+  };
+
+  const addDraftCustomTag = () => {
+    const normalized = normalizeTagName(draftCustomTag);
+    if (!normalized) return;
+    setDraftTags((prev) => {
+      if (prev.some((t) => t.toLowerCase() === normalized.toLowerCase())) return prev;
+      if (prev.length >= MAX_TAGS_PER_MEMORY) {
+        return [...prev.slice(0, MAX_TAGS_PER_MEMORY - 1), normalized];
+      }
+      return [...prev, normalized];
+    });
+    setDraftCustomTag('');
+  };
+
+  const handleSaveEditedTags = async () => {
+    if (!editingTagsMemory || !onUpdateMemoryTags) {
+      setEditingTagsMemory(null);
+      return;
+    }
+    const pending = normalizeTagName(draftCustomTag);
+    const nextTags = dedupeTags([...draftTags, ...(pending ? [pending] : [])]).slice(
+      0,
+      MAX_TAGS_PER_MEMORY
+    );
+    const finalTags = nextTags.length > 0 ? nextTags : ['Kỷ niệm'];
+
+    setIsSavingTags(true);
+    setTagSaveError(null);
+    try {
+      await onUpdateMemoryTags(editingTagsMemory.id, finalTags);
+      setEditingTagsMemory(null);
+      setDraftCustomTag('');
+    } catch (err: any) {
+      setTagSaveError(
+        err?.message || 'Không thể đồng bộ thẻ lên đám mây lúc này. Bạn hãy thử bấm Lưu thẻ lại nhé!'
+      );
+    } finally {
+      setIsSavingTags(false);
+    }
+  };
+
+  const handleQuickSelectTag = (tagName: string) => {
+    setSelectedTag((prev) =>
+      prev.toLowerCase() === tagName.toLowerCase() && tagName !== 'Tất cả' ? 'Tất cả' : tagName
+    );
+  };
+
+  const hasActiveFilters =
+    selectedTag !== 'Tất cả' ||
+    selectedYear !== 'all' ||
+    mediaFilter !== 'all' ||
+    Boolean(searchQuery.trim());
+
+  const resetAllFilters = () => {
+    setSelectedTag('Tất cả');
+    setSelectedYear('all');
+    setMediaFilter('all');
+    setSearchQuery('');
+  };
+
   // Lấy danh sách các năm có kỷ niệm
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -258,28 +363,29 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
     return Array.from(years).sort().reverse();
   }, [memories]);
 
-  // Bộ lọc tìm kiếm
+  // Bộ lọc tìm kiếm & gắn thẻ
   const filteredMemories = useMemo(() => {
     return memories.filter((m) => {
       // 0. Video filter
       if (mediaFilter === 'video' && !(m.mediaType === 'video' && m.videoUrl)) {
         return false;
       }
-      // 1. Tag
-      if (selectedTag !== 'Tất cả' && m.tag !== selectedTag) {
+      // 1. Tag (hỗ trợ cả thẻ đơn cũ lẫn nhiều thẻ mới)
+      if (selectedTag !== 'Tất cả' && !memoryHasTag(m, selectedTag)) {
         return false;
       }
       // 2. Year
       if (selectedYear !== 'all' && !(m.date || '').startsWith(selectedYear)) {
         return false;
       }
-      // 3. Search query
+      // 3. Search query (tìm cả trong caption, địa điểm, ngày và thẻ gắn)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const inCaption = (m.caption || '').toLowerCase().includes(query);
         const inLocation = (m.location || '').toLowerCase().includes(query);
         const inDate = (m.date || '').includes(query);
-        if (!inCaption && !inLocation && !inDate) {
+        const inTags = getMemoryTags(m).some((t) => t.toLowerCase().includes(query));
+        if (!inCaption && !inLocation && !inDate && !inTags) {
           return false;
         }
       }
@@ -377,38 +483,106 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
           </div>
         </div>
 
-        {/* Tag Filters */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pt-3.5 mt-3.5 border-t border-[#8C6D58]/10 no-scrollbar">
-          <span className="text-xs font-semibold text-[#8C6D58] flex items-center gap-1 shrink-0 mr-1">
-            <Filter className="w-3 h-3 text-[#E8A598]" />
-            Chủ đề:
-          </span>
-          {POPULAR_TAGS.map((tag) => (
-            <button
-              key={tag}
-              onClick={() => setSelectedTag(tag)}
-              className={`text-xs px-3 py-1 rounded-full whitespace-nowrap transition-all cursor-pointer ${
-                selectedTag === tag
-                  ? 'bg-[#E8A598] text-white font-semibold shadow-xs'
-                  : 'bg-white hover:bg-[#F9F6F0] text-[#8C6D58] border border-[#8C6D58]/15'
-              }`}
-            >
-              {tag}
-            </button>
-          ))}
-          {videoCount > 0 && (
+        {/* Bộ lọc thẻ nhanh (Du lịch, Hẹn hò, Ngày lễ, Kỷ niệm & thẻ tùy chỉnh) */}
+        <div className="pt-3.5 mt-3.5 border-t border-[#8C6D58]/10 space-y-2.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            <span className="text-xs font-semibold text-[#8C6D58] flex items-center gap-1 shrink-0 mr-1">
+              <Filter className="w-3.5 h-3.5 text-[#D98A76]" />
+              Thẻ lọc:
+            </span>
+
             <button
               type="button"
-              onClick={() => setMediaFilter((prev) => (prev === 'video' ? 'all' : 'video'))}
-              className={`text-xs px-3 py-1 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer ml-1 ${
-                mediaFilter === 'video'
-                  ? 'bg-[#3D2E28] text-white font-semibold shadow-xs'
-                  : 'bg-white hover:bg-[#F9F6F0] text-[#D98A76] border border-[#D98A76]/40 font-semibold'
+              onClick={() => setSelectedTag('Tất cả')}
+              className={`text-xs px-3 py-1.5 rounded-lg whitespace-nowrap transition-all cursor-pointer border font-medium ${
+                selectedTag === 'Tất cả'
+                  ? 'bg-[#3D2E28] text-white border-[#3D2E28] font-semibold shadow-2xs'
+                  : 'bg-white hover:bg-[#F9F6F0] text-[#8C6D58] hover:text-[#3D2E28] border-[#8C6D58]/15'
               }`}
             >
-              <Video className="w-3 h-3" />
-              <span>Video ({videoCount})</span>
+              Tất cả ({memories.length})
             </button>
+
+            {tagFilterStats.map((stat) => {
+              const isActive = selectedTag.toLowerCase() === stat.name.toLowerCase();
+              return (
+                <button
+                  key={stat.name}
+                  type="button"
+                  onClick={() => handleQuickSelectTag(stat.name)}
+                  className={`text-xs px-3 py-1.5 rounded-lg whitespace-nowrap transition-all cursor-pointer border flex items-center gap-1.5 ${
+                    isActive
+                      ? 'bg-[#E8A598] text-white border-[#E8A598] font-semibold shadow-2xs'
+                      : stat.count > 0
+                      ? 'bg-white hover:bg-[#F9F6F0] text-[#3D2E28] border-[#8C6D58]/20 font-medium'
+                      : 'bg-[#FAF7F2]/80 hover:bg-white text-[#8C6D58]/80 border-[#8C6D58]/10'
+                  }`}
+                >
+                  <span>{stat.isCustom ? `#${stat.name}` : stat.name}</span>
+                  {stat.count > 0 && (
+                    <span
+                      className={`text-[11px] tabular-nums ${
+                        isActive ? 'text-white/90' : 'text-[#8C6D58]'
+                      }`}
+                    >
+                      {stat.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            {videoCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setMediaFilter((prev) => (prev === 'video' ? 'all' : 'video'))}
+                className={`text-xs px-3 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer ml-1 border ${
+                  mediaFilter === 'video'
+                    ? 'bg-[#3D2E28] text-white border-[#3D2E28] font-semibold shadow-2xs'
+                    : 'bg-white hover:bg-[#F9F6F0] text-[#D98A76] border-[#D98A76]/40 font-semibold'
+                }`}
+              >
+                <Video className="w-3 h-3" />
+                <span>Video ({videoCount})</span>
+              </button>
+            )}
+          </div>
+
+          {/* Thanh tóm tắt kết quả lọc khi đang chọn thẻ / năm / tìm kiếm */}
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#8C6D58] pt-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span>
+                  Đang xem <strong className="text-[#3D2E28]">{filteredMemories.length}</strong> /{' '}
+                  {memories.length} kỷ niệm
+                </span>
+                {selectedTag !== 'Tất cả' && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="text-[#D98A76] font-semibold">Thẻ: {selectedTag}</span>
+                  </>
+                )}
+                {selectedYear !== 'all' && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>Năm {selectedYear}</span>
+                  </>
+                )}
+                {mediaFilter === 'video' && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>Chỉ Video</span>
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] hover:underline cursor-pointer"
+              >
+                Xem tất cả
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -420,18 +594,34 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
             <Heart className="w-8 h-8" />
           </div>
           <h3 className="font-serif-romantic text-xl font-bold text-[#3D2E28] mb-1">
-            Chưa có kỷ niệm nào phù hợp
+            {selectedTag !== 'Tất cả'
+              ? `Chưa có kỷ niệm nào thuộc thẻ "${selectedTag}"`
+              : 'Chưa có kỷ niệm nào phù hợp'}
           </h3>
-          <p className="text-xs text-[#8C6D58] mb-5">
-            Hãy thử tìm bằng từ khóa khác hoặc bấm lưu giữ một khoảnh khắc mới của hai bạn nhé!
+          <p className="text-xs text-[#8C6D58] mb-5 leading-relaxed">
+            {selectedTag !== 'Tất cả'
+              ? 'Bạn có thể đăng kỷ niệm mới kèm thẻ này hoặc bấm nút gắn thẻ trên các kỷ niệm cũ để phân loại nhanh nhé!'
+              : 'Hãy thử tìm bằng từ khóa khác hoặc bấm lưu giữ một khoảnh khắc mới của hai bạn nhé!'}
           </p>
-          <button
-            onClick={onOpenQuickUpload}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#E8A598] hover:bg-[#D98A76] text-white font-semibold text-xs shadow-md transition-all"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Thêm Kỷ Niệm Ngay</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="px-4 py-2.5 rounded-full bg-[#F9F6F0] hover:bg-[#EFE7DC] text-[#8C6D58] hover:text-[#3D2E28] font-semibold text-xs transition-all cursor-pointer"
+              >
+                Xem tất cả kỷ niệm
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onOpenQuickUpload}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#E8A598] hover:bg-[#D98A76] text-white font-semibold text-xs shadow-md transition-all cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Thêm Kỷ Niệm Ngay</span>
+            </button>
+          </div>
         </div>
       ) : viewMode === 'masonry' ? (
         /* Dạng Lưới Pinterest / Polaroid Grid */
@@ -459,11 +649,24 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                         className="w-full h-full object-cover"
                         loading="lazy"
                       />
-                      {/* Tag badge */}
-                      <div className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-white/90 backdrop-blur-xs text-[#D98A76] text-[11px] font-semibold rounded-full shadow-xs flex items-center gap-1">
+                      {/* Primary tag marker (bấm để lọc nhanh theo thẻ) */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickSelectTag(getMemoryTags(item)[0]);
+                        }}
+                        className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-white/92 hover:bg-white backdrop-blur-xs text-[#D98A76] text-[11px] font-semibold rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
+                        title={`Lọc kỷ niệm theo thẻ "${getMemoryTags(item)[0]}"`}
+                      >
                         <Tag className="w-2.5 h-2.5" />
-                        <span>{item.tag || 'Kỷ niệm'}</span>
-                      </div>
+                        <span>{getMemoryTags(item)[0]}</span>
+                        {getMemoryTags(item).length > 1 && (
+                          <span className="text-[10px] text-[#8C6D58]">
+                            +{getMemoryTags(item).length - 1}
+                          </span>
+                        )}
+                      </button>
 
                       {/* Video badge OR Multi-photo badge */}
                       {item.mediaType === 'video' && item.videoUrl ? (
@@ -576,6 +779,27 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                     "{item.caption}"
                   </p>
 
+                  {/* Danh sách các thẻ gắn (bấm vào thẻ để lọc nhanh) */}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#8C6D58]">
+                    {getMemoryTags(item).map((tagLabel, tIdx) => (
+                      <React.Fragment key={tagLabel}>
+                        {tIdx > 0 && <span aria-hidden="true" className="text-[#8C6D58]/40">·</span>}
+                        <button
+                          type="button"
+                          onClick={() => handleQuickSelectTag(tagLabel)}
+                          className={`hover:text-[#D98A76] transition-colors cursor-pointer ${
+                            selectedTag.toLowerCase() === tagLabel.toLowerCase()
+                              ? 'text-[#D98A76] font-semibold underline underline-offset-2'
+                              : ''
+                          }`}
+                          title={`Xem tất cả kỷ niệm thẻ "${tagLabel}"`}
+                        >
+                          #{tagLabel}
+                        </button>
+                      </React.Fragment>
+                    ))}
+                  </div>
+
                   {/* Nhạc đính kèm kỷ niệm */}
                   {item.music?.url && (
                     <div className="mt-3">
@@ -633,9 +857,20 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                 </button>
 
                 <div className="flex items-center gap-1.5">
+                  {onUpdateMemoryTags && (
+                    <button
+                      type="button"
+                      onClick={() => openTagEditor(item)}
+                      className="p-1.5 text-[#8C6D58] hover:text-[#D98A76] hover:bg-[#F9F6F0] rounded-lg transition-all cursor-pointer"
+                      title="Gắn hoặc sửa thẻ kỷ niệm"
+                    >
+                      <Tag className="w-4 h-4" />
+                    </button>
+                  )}
+
                   <button
                     onClick={() => onOpenShare(item)}
-                    className="p-1.5 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-lg transition-all"
+                    className="p-1.5 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-lg transition-all cursor-pointer"
                     title="Tạo khung ảnh Polaroid chia sẻ"
                   >
                     <Share2 className="w-4 h-4 text-[#D98A76]" />
@@ -760,18 +995,35 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                   {/* Info */}
                   <div className="flex-1 flex flex-col justify-between">
                     <div>
-                      <div className="flex flex-wrap items-center gap-2 mb-2 text-xs text-[#8C6D58]">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2 text-xs text-[#8C6D58]">
                         <span className="sm:hidden font-semibold text-[#D98A76]">
                           {formatSafeDate(item.date)}
                         </span>
                         {item.location && (
-                          <span className="flex items-center gap-1 font-medium bg-[#F9F6F0] px-2.5 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-1 font-medium text-[#3D2E28]">
                             <MapPin className="w-3 h-3 text-[#D98A76]" />
                             {item.location}
                           </span>
                         )}
-                        <span className="px-2 py-0.5 bg-[#E8A598]/15 text-[#D98A76] rounded-full text-[11px] font-semibold">
-                          {item.tag || 'Kỷ niệm'}
+                        {item.location && <span aria-hidden="true" className="text-[#8C6D58]/40">·</span>}
+                        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          {getMemoryTags(item).map((tagLabel, tIdx) => (
+                            <React.Fragment key={tagLabel}>
+                              {tIdx > 0 && <span aria-hidden="true" className="text-[#8C6D58]/40">·</span>}
+                              <button
+                                type="button"
+                                onClick={() => handleQuickSelectTag(tagLabel)}
+                                className={`text-[11px] font-semibold transition-colors cursor-pointer ${
+                                  selectedTag.toLowerCase() === tagLabel.toLowerCase()
+                                    ? 'text-[#3D2E28] underline underline-offset-2'
+                                    : 'text-[#D98A76] hover:text-[#3D2E28]'
+                                }`}
+                                title={`Lọc theo thẻ "${tagLabel}"`}
+                              >
+                                #{tagLabel}
+                              </button>
+                            </React.Fragment>
+                          ))}
                         </span>
                       </div>
 
@@ -835,9 +1087,20 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                       </button>
 
                       <div className="flex items-center gap-2">
+                        {onUpdateMemoryTags && (
+                          <button
+                            type="button"
+                            onClick={() => openTagEditor(item)}
+                            className="flex items-center gap-1 text-xs text-[#8C6D58] hover:text-[#3D2E28] bg-white px-2.5 py-1 rounded-lg border border-[#8C6D58]/15 cursor-pointer"
+                            title="Gắn hoặc sửa thẻ kỷ niệm"
+                          >
+                            <Tag className="w-3.5 h-3.5 text-[#D98A76]" />
+                            <span>Gắn thẻ</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => onOpenShare(item)}
-                          className="flex items-center gap-1 text-xs text-[#8C6D58] hover:text-[#3D2E28] bg-white px-2.5 py-1 rounded-lg border border-[#8C6D58]/15"
+                          className="flex items-center gap-1 text-xs text-[#8C6D58] hover:text-[#3D2E28] bg-white px-2.5 py-1 rounded-lg border border-[#8C6D58]/15 cursor-pointer"
                         >
                           <Share2 className="w-3.5 h-3.5 text-[#D98A76]" />
                           <span>Khung ảnh</span>
@@ -898,6 +1161,133 @@ export const MemoryFeed: React.FC<MemoryFeedProps> = ({
                 className="flex-1 py-2 px-3 text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 rounded-xl shadow-md transition-all cursor-pointer"
               >
                 Xóa vĩnh viễn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL GẮN & SỬA THẺ (TAGS) CHO KỶ NIỆM */}
+      {editingTagsMemory && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn"
+          onClick={() => !isSavingTags && setEditingTagsMemory(null)}
+        >
+          <div
+            className="bg-[#FFFDF9] rounded-3xl border border-[#8C6D58]/20 shadow-2xl max-w-md w-full p-5 sm:p-6 card-warm-pastel space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-serif-romantic text-xl font-bold text-[#3D2E28] flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-[#D98A76]" />
+                  <span>Gắn thẻ cho kỷ niệm</span>
+                </h3>
+                <p className="text-xs text-[#8C6D58] mt-0.5">
+                  Chọn tối đa {MAX_TAGS_PER_MEMORY} thẻ để dễ dàng lọc nhanh theo nhóm kỷ niệm
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isSavingTags}
+                onClick={() => setEditingTagsMemory(null)}
+                className="p-1.5 text-[#8C6D58] hover:text-[#3D2E28] hover:bg-[#F9F6F0] rounded-full cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {editingTagsMemory.caption && (
+              <div className="p-2.5 bg-[#FAF6F0] rounded-xl border border-[#8C6D58]/15">
+                <p className={`${fontClass} text-base text-[#3D2E28] line-clamp-2`}>
+                  "{editingTagsMemory.caption}"
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-[#8C6D58]">
+                <span className="font-semibold">Chọn nhóm thẻ:</span>
+                <span>
+                  {draftTags.length}/{MAX_TAGS_PER_MEMORY} thẻ
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {dedupeTags([
+                  ...PRESET_MEMORY_TAGS,
+                  ...tagFilterStats.filter((s) => s.isCustom).map((s) => s.name),
+                  ...draftTags
+                ]).map((tagName) => {
+                  const isPicked = draftTags.some(
+                    (t) => t.toLowerCase() === tagName.toLowerCase()
+                  );
+                  return (
+                    <button
+                      key={tagName}
+                      type="button"
+                      onClick={() => toggleDraftTag(tagName)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1 cursor-pointer ${
+                        isPicked
+                          ? 'bg-[#E8A598] text-white border-[#E8A598] shadow-2xs'
+                          : 'bg-white text-[#8C6D58] hover:text-[#3D2E28] border-[#8C6D58]/20 hover:border-[#E8A598]'
+                      }`}
+                    >
+                      {isPicked && <Check className="w-3 h-3" />}
+                      <span>{tagName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={draftCustomTag}
+                onChange={(e) => setDraftCustomTag(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addDraftCustomTag();
+                  }
+                }}
+                maxLength={24}
+                placeholder="Thêm thẻ mới (vd: Đà Lạt, Noel, Trung Thu...)"
+                className="flex-1 px-3 py-2 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden text-[#3D2E28]"
+              />
+              <button
+                type="button"
+                onClick={addDraftCustomTag}
+                disabled={!draftCustomTag.trim()}
+                className="px-3 py-2 rounded-xl bg-[#F9F6F0] hover:bg-[#EFE7DC] text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-45 shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Thêm</span>
+              </button>
+            </div>
+
+            {tagSaveError && (
+              <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 leading-snug">
+                {tagSaveError}
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#8C6D58]/10">
+              <button
+                type="button"
+                disabled={isSavingTags}
+                onClick={() => setEditingTagsMemory(null)}
+                className="px-4 py-2 text-xs font-semibold text-[#8C6D58] hover:text-[#3D2E28] bg-[#F9F6F0] rounded-xl cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={isSavingTags}
+                onClick={() => void handleSaveEditedTags()}
+                className="px-5 py-2 text-xs font-bold text-white bg-[#E8A598] hover:bg-[#D98A76] rounded-xl shadow-sm transition-all cursor-pointer disabled:opacity-60"
+              >
+                {isSavingTags ? 'Đang lưu...' : 'Lưu thẻ'}
               </button>
             </div>
           </div>

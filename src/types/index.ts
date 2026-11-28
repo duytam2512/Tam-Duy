@@ -18,7 +18,8 @@ export interface Memory {
   date: string; // YYYY-MM-DD
   location: string;
   caption: string;
-  tag: string;
+  tag: string; // Thẻ chính (tương thích ngược dữ liệu cũ)
+  tags?: string[]; // Danh sách nhiều thẻ gắn cho kỷ niệm (vd: ['Du lịch', 'Ngày lễ'])
   likes: number;
   isLiked?: boolean;
   createdAt: number;
@@ -204,13 +205,15 @@ export const DEFAULT_BG_SETTINGS: BackgroundSettings = {
 
 export const POPULAR_TAGS = [
   "Tất cả",
-  "Hẹn hò",
   "Du lịch",
+  "Hẹn hò",
+  "Ngày lễ",
   "Kỷ niệm",
-  "Khoảnh khắc",
+  "Sinh nhật",
   "Quán quen",
+  "Món ngon",
   "Bình yên",
-  "Món ngon"
+  "Khoảnh khắc"
 ];
 
 // 12 Kỷ niệm mẫu ban đầu phong phú, ấm áp

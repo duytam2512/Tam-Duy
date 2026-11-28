@@ -48,7 +48,7 @@ async function isFirestoreEndpointReachable(): Promise<boolean> {
   )}`;
 
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), 5000) : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 8000) : null;
   try {
     const res = await fetch(url, {
       method: 'GET',
@@ -116,7 +116,7 @@ const initialConnectionPromise: Promise<boolean> = testConnection();
  * before attaching heavy real-time collection listeners (preventing head-of-line blocking
  * on the shared Watch stream). Never blocks longer than `maxWaitMs`.
  */
-export function waitForInitialConnection(maxWaitMs = 1800): Promise<void> {
+export function waitForInitialConnection(maxWaitMs = 4000): Promise<void> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return Promise.resolve();
   }

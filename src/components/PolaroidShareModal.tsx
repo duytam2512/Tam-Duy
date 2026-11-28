@@ -71,11 +71,17 @@ export const PolaroidShareModal: React.FC<PolaroidShareModalProps> = ({
       const infoY = photoY + photoHeight + 50;
       ctx.fillStyle = '#D98A76';
       ctx.font = '600 22px "Plus Jakarta Sans", sans-serif';
-      const formattedDate = new Date(memory.date).toLocaleDateString('vi-VN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
+      const dateMatch = (memory.date || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const parsedDate = dateMatch
+        ? new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]))
+        : new Date(memory.date);
+      const formattedDate = Number.isFinite(parsedDate.getTime())
+        ? parsedDate.toLocaleDateString('vi-VN', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          })
+        : memory.date || '';
       const locationText = `📍 ${memory.location || 'Một nơi bình yên'}  •  📅 ${formattedDate}`;
       ctx.fillText(locationText, 45, infoY);
 

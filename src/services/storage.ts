@@ -19,6 +19,7 @@ import {
   collection,
   onSnapshot,
   setDoc,
+  updateDoc,
   deleteDoc,
   getDoc
 } from 'firebase/firestore';
@@ -554,6 +555,32 @@ export const saveSharedMemory = async (
     return prepared;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `memories/${memory.id}`);
+    throw err;
+  }
+};
+
+/**
+ * Cập nhật nhanh các trường nhỏ (như `tag`, `tags`, `likes`, `isLiked`) bằng `updateDoc`
+ * thay vì ghi đè toàn bộ tài liệu chứa ảnh base64 dung lượng lớn (~300-750KB).
+ * Tự động fallback sang `saveSharedMemory` nếu tài liệu chưa tồn tại trên Cloud.
+ */
+export const updateSharedMemoryFields = async (
+  id: string,
+  fields: Partial<Pick<Memory, 'tag' | 'tags' | 'likes' | 'isLiked' | 'caption' | 'location' | 'date'>>,
+  fallbackMemory?: Memory
+): Promise<void> => {
+  const cleanFields = stripUndefinedFromObject(fields);
+  const memDocRef = doc(db, 'memories', id);
+  try {
+    await updateDoc(memDocRef, cleanFields);
+  } catch (err: any) {
+    const code = String(err?.code || '');
+    const msg = String(err?.message || '');
+    if (fallbackMemory && (code === 'not-found' || msg.includes('No document to update'))) {
+      await saveSharedMemory(fallbackMemory);
+      return;
+    }
+    handleFirestoreError(err, OperationType.UPDATE, `memories/${id}`);
     throw err;
   }
 };

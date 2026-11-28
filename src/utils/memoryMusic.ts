@@ -131,8 +131,18 @@ export async function resolveMemoryMusicLink(
   }
 
   // 3. Fallback client-side cho link âm thanh trực tiếp / Google Drive / Dropbox / nội bộ /music/
-  if (/^https?:\/\//i.test(query) || query.startsWith('/music/') || query.startsWith('cloud-media://')) {
-    const normalizedUrl = /^https?:\/\//i.test(query) ? normalizeDirectAudioLink(query) : query;
+  if (
+    /^https?:\/\//i.test(query) ||
+    /^(www\.|drive\.google\.com|dropbox\.com)/i.test(query) ||
+    query.startsWith('/music/') ||
+    query.startsWith('cloud-media://')
+  ) {
+    const withProto = /^(www\.|drive\.google\.com|dropbox\.com)/i.test(query)
+      ? `https://${query}`
+      : query;
+    const normalizedUrl = /^https?:\/\//i.test(withProto)
+      ? normalizeDirectAudioLink(withProto)
+      : withProto;
     return sanitizeMemoryMusic({
       title: cleanTitle || inferTitleFromUrl(normalizedUrl),
       artist: 'Nhạc theo link',

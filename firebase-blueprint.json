@@ -59,7 +59,15 @@
         },
         "tag": {
           "type": "string",
-          "description": "Thể loại kỷ niệm"
+          "description": "Thẻ chính của kỷ niệm"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Danh sách nhiều thẻ gắn cho kỷ niệm (tối đa 5 thẻ)"
+        },
+        "music": {
+          "type": "object",
+          "description": "Thông tin bài nhạc đính kèm theo link cho kỷ niệm"
         },
         "likes": {
           "type": "number",

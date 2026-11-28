@@ -934,6 +934,7 @@ const MusicPlayerInner: React.FC = () => {
     const handleMemoryMusicPlay = (e: Event) => {
       const custom = e as CustomEvent<{ playerId?: string }>;
       if (custom.detail?.playerId && custom.detail.playerId !== 'global-music-player') {
+        playRequestSeqRef.current += 1;
         wantsToPlayRef.current = false;
         if (audioRef.current && !audioRef.current.paused) {
           audioRef.current.pause();

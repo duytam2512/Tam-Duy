@@ -34,7 +34,6 @@ import {
   Memory,
   MemoryMusic,
   MusicTrack,
-  POPULAR_TAGS,
   SAMPLE_PHOTO_LIBRARY,
   CoupleInfo,
   CaptionFont,
@@ -51,6 +50,12 @@ import {
 } from '../services/storage';
 import { generateSmartCaptions, extractContextualEmojis, CaptionTone, CaptionSuggestion } from '../utils/aiCaptionEngine';
 import { resolveMemoryMusicLink, musicTrackToMemoryMusic } from '../utils/memoryMusic';
+import {
+  PRESET_MEMORY_TAGS,
+  MAX_TAGS_PER_MEMORY,
+  normalizeTagName,
+  dedupeTags
+} from '../utils/memoryTags';
 import { MemoryMusicBar } from './MemoryMusicBar';
 import { PhotoEditorModal } from './PhotoEditorModal';
 import {
@@ -69,6 +74,7 @@ interface QuickUploadFormProps {
   isOpen: boolean;
   onClose: () => void;
   coupleInfo: CoupleInfo;
+  availableCustomTags?: string[];
   currentFont?: CaptionFont;
   fontClass?: string;
   onOpenFontModal?: () => void;
@@ -80,6 +86,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   isOpen,
   onClose,
   coupleInfo,
+  availableCustomTags = [],
   currentFont = 'caveat',
   fontClass = 'font-handwriting',
   onOpenFontModal,
@@ -108,7 +115,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [location, setLocation] = useState<string>('');
   const [caption, setCaption] = useState<string>('');
-  const [selectedTag, setSelectedTag] = useState<string>('Kỷ niệm');
+  const [selectedTags, setSelectedTags] = useState<string[]>(['Kỷ niệm']);
+  const [customTagInput, setCustomTagInput] = useState<string>('');
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressProgress, setCompressProgress] = useState<{ done: number; total: number } | null>(null);
   const [saveStatusText, setSaveStatusText] = useState<string>('');
@@ -176,6 +184,38 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
     setMusicError(null);
     setSelectedMusic(musicTrackToMemoryMusic(track));
     setShowMusicPanel(true);
+  };
+
+  const suggestedUploadTags = dedupeTags([...PRESET_MEMORY_TAGS, ...availableCustomTags]);
+
+  const handleToggleMemoryTag = (tagName: string) => {
+    const normalized = normalizeTagName(tagName);
+    if (!normalized) return;
+    setSelectedTags((prev) => {
+      const exists = prev.some((t) => t.toLowerCase() === normalized.toLowerCase());
+      if (exists) {
+        return prev.length > 1
+          ? prev.filter((t) => t.toLowerCase() !== normalized.toLowerCase())
+          : prev;
+      }
+      if (prev.length >= MAX_TAGS_PER_MEMORY) {
+        return [...prev.slice(0, MAX_TAGS_PER_MEMORY - 1), normalized];
+      }
+      return [...prev, normalized];
+    });
+  };
+
+  const handleAddCustomTag = () => {
+    const normalized = normalizeTagName(customTagInput);
+    if (!normalized) return;
+    setSelectedTags((prev) => {
+      if (prev.some((t) => t.toLowerCase() === normalized.toLowerCase())) return prev;
+      if (prev.length >= MAX_TAGS_PER_MEMORY) {
+        return [...prev.slice(0, MAX_TAGS_PER_MEMORY - 1), normalized];
+      }
+      return [...prev, normalized];
+    });
+    setCustomTagInput('');
   };
 
   // Dọn dẹp Object URL khi đổi hoặc xóa video preview
@@ -566,7 +606,13 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
     try {
       const memoryLocation = location.trim() || 'Một nơi bình yên';
-      const memoryTag = selectedTag || 'Kỷ niệm';
+      const pendingCustom = normalizeTagName(customTagInput);
+      const finalTags = dedupeTags([
+        ...selectedTags,
+        ...(pendingCustom ? [pendingCustom] : [])
+      ]).slice(0, MAX_TAGS_PER_MEMORY);
+      const memoryTags = finalTags.length > 0 ? finalTags : ['Kỷ niệm'];
+      const memoryTag = memoryTags[0];
       const memoryDate = date || new Date().toISOString().split('T')[0];
 
       // Nếu người dùng đã dán link nhạc nhưng bấm Lưu ngay mà chưa bấm "Chọn nhạc" -> tự phân giải luôn
@@ -610,7 +656,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             date: memoryDate,
             location: memoryLocation,
             caption: caption.trim(),
-            tag: memoryTag
+            tag: memoryTag,
+            tags: memoryTags
           },
           (status) => setSaveStatusText(status)
         );
@@ -625,7 +672,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             date: memoryDate,
             location: memoryLocation,
             caption: caption.trim(),
-            tag: memoryTag
+            tag: memoryTag,
+            tags: memoryTags
           },
           (status) => setSaveStatusText(status)
         );
@@ -639,7 +687,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
           date: memoryDate,
           location: memoryLocation,
           caption: images.length > 1 ? `${caption.trim()} (Ảnh #${i + 1})` : caption.trim(),
-          tag: memoryTag
+          tag: memoryTag,
+          tags: memoryTags
         }));
         await onAddMemory(list, (status) => setSaveStatusText(status));
       }
@@ -659,6 +708,8 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
       handleClearVideo();
       setCaption('');
       setLocation('');
+      setSelectedTags(['Kỷ niệm']);
+      setCustomTagInput('');
       setSelectedMusic(null);
       setMusicLinkInput('');
       setMusicCustomTitle('');
@@ -1247,7 +1298,7 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
             </div>
           )}
 
-          {/* Ô nhập ngày kỷ niệm & Thể loại */}
+          {/* Ô nhập ngày kỷ niệm & Địa điểm */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-[#8C6D58] mb-1">
@@ -1267,40 +1318,108 @@ export const QuickUploadForm: React.FC<QuickUploadFormProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-[#8C6D58] mb-1">
-                Chủ đề / Thể loại
+                Địa điểm kỷ niệm
               </label>
               <div className="relative">
-                <Tag className="w-4 h-4 text-[#8C6D58] absolute left-3 top-2.5 pointer-events-none" />
-                <select
-                  value={selectedTag}
-                  onChange={(e) => setSelectedTag(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden appearance-none"
-                >
-                  {POPULAR_TAGS.filter((t) => t !== 'Tất cả').map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
+                <MapPin className="w-4 h-4 text-[#8C6D58] absolute left-3 top-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Ví dụ: Đà Lạt, Hồ Tây, Góc Bếp Nhỏ..."
+                  className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
+                />
               </div>
             </div>
           </div>
 
-          {/* Ô nhập địa điểm */}
-          <div>
-            <label className="block text-xs font-semibold text-[#8C6D58] mb-1">
-              Địa điểm kỷ niệm
-            </label>
-            <div className="relative">
-              <MapPin className="w-4 h-4 text-[#8C6D58] absolute left-3 top-2.5 pointer-events-none" />
+          {/* Hệ thống Gắn Thẻ (Tags) đa lựa chọn & tạo thẻ riêng */}
+          <div className="rounded-2xl bg-[#FAF7F2] border border-[#8C6D58]/15 p-3 sm:p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-[#3D2E28]">
+                <Tag className="w-3.5 h-3.5 text-[#D98A76]" />
+                <span>Gắn thẻ kỷ niệm</span>
+              </div>
+              <span className="text-[11px] text-[#8C6D58]">
+                Đã chọn {selectedTags.length}/{MAX_TAGS_PER_MEMORY} thẻ
+              </span>
+            </div>
+
+            {/* Danh sách thẻ gợi ý (Du lịch, Hẹn hò, Ngày lễ, Kỷ niệm, Sinh nhật...) */}
+            <div className="flex flex-wrap gap-1.5">
+              {suggestedUploadTags.map((tagName) => {
+                const isSelected = selectedTags.some(
+                  (t) => t.toLowerCase() === tagName.toLowerCase()
+                );
+                return (
+                  <button
+                    key={tagName}
+                    type="button"
+                    onClick={() => handleToggleMemoryTag(tagName)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                      isSelected
+                        ? 'bg-[#E8A598] text-white border-[#E8A598] shadow-2xs'
+                        : 'bg-white text-[#8C6D58] hover:text-[#3D2E28] border-[#8C6D58]/15 hover:border-[#E8A598]'
+                    }`}
+                  >
+                    {isSelected && <Check className="w-3 h-3" />}
+                    <span>{tagName}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Thêm thẻ tùy chỉnh mới */}
+            <div className="flex items-center gap-2">
               <input
                 type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Ví dụ: Bờ Hồ Tây, Tiệm Cà Phê Mộc Đà Lạt, Góc Bếp Nhỏ..."
-                className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden"
+                value={customTagInput}
+                onChange={(e) => setCustomTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomTag();
+                  }
+                }}
+                maxLength={24}
+                placeholder="Tạo thẻ mới (vd: Đà Lạt, Noel, Valentine, Kỷ niệm 1 năm...)"
+                className="flex-1 px-3 py-1.5 text-xs rounded-xl bg-white border border-[#8C6D58]/20 focus:border-[#E8A598] focus:outline-hidden text-[#3D2E28]"
               />
+              <button
+                type="button"
+                onClick={handleAddCustomTag}
+                disabled={!customTagInput.trim()}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#F9F6F0] border border-[#8C6D58]/20 text-xs font-semibold text-[#D98A76] hover:text-[#3D2E28] transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-45 shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Thêm thẻ</span>
+              </button>
             </div>
+
+            {/* Hiển thị các thẻ tùy chỉnh đã chọn không nằm trong danh sách gợi ý */}
+            {selectedTags.some(
+              (t) => !suggestedUploadTags.some((s) => s.toLowerCase() === t.toLowerCase())
+            ) && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[11px] text-[#8C6D58]">Thẻ mới tạo:</span>
+                {selectedTags
+                  .filter(
+                    (t) => !suggestedUploadTags.some((s) => s.toLowerCase() === t.toLowerCase())
+                  )
+                  .map((customTag) => (
+                    <button
+                      key={customTag}
+                      type="button"
+                      onClick={() => handleToggleMemoryTag(customTag)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#D98A76] text-white text-xs font-medium cursor-pointer"
+                      title="Bấm để gỡ thẻ này"
+                    >
+                      <span>#{customTag}</span>
+                      <X className="w-3 h-3" />
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
 
           {/* Nhạc nền cho kỷ niệm (chọn theo link YouTube, Zing MP3, MP3, Google Drive hoặc từ danh sách phát) */}

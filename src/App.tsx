@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { HeaderHero } from './components/HeaderHero';
 import { QuickUploadForm } from './components/QuickUploadForm';
 import { MemoryFeed } from './components/MemoryFeed';
@@ -16,6 +16,7 @@ import { PWAInstallButton } from './components/PWAInstallButton';
 import { HandwrittenJournalModal } from './components/HandwrittenJournalModal';
 import { FontSettingsModal } from './components/FontSettingsModal';
 import { forceHardUpdateApp } from './utils/appUpdater';
+import { buildTagFilterStats, dedupeTags } from './utils/memoryTags';
 import {
   Memory,
   CoupleInfo,
@@ -35,6 +36,7 @@ import {
   saveBackgroundSettingsBoth,
   subscribeToSharedMemories,
   saveSharedMemory,
+  updateSharedMemoryFields,
   deleteSharedMemory,
   deleteMemoryCloudAssets,
   subscribeToSharedCoupleInfo,
@@ -71,7 +73,7 @@ export function App() {
       return true;
     }
   });
-  const [selectedLightboxIndex, setSelectedLightboxIndex] = useState<number | null>(null);
+  const [selectedLightboxId, setSelectedLightboxId] = useState<string | null>(null);
   const [selectedShareMemory, setSelectedShareMemory] = useState<Memory | null>(null);
 
   const handleToggleSnow = () => {
@@ -235,7 +237,7 @@ export function App() {
     });
   };
 
-  // Thả tim kỷ niệm
+  // Thả tim kỷ niệm (cập nhật nhẹ chỉ 2 trường likes/isLiked, không tải lại toàn bộ ảnh)
   const handleToggleLike = async (id: string) => {
     let targetMem: Memory | null = null;
     const updated = memories.map((m) => {
@@ -251,9 +253,53 @@ export function App() {
     setMemories(updated);
     saveMemoriesToStorage(updated);
     if (targetMem) {
-      await saveSharedMemory(targetMem);
+      const memToSync: Memory = targetMem;
+      try {
+        await updateSharedMemoryFields(
+          id,
+          { likes: memToSync.likes, isLiked: Boolean(memToSync.isLiked) },
+          memToSync
+        );
+      } catch (err) {
+        console.warn('Không thể đồng bộ lượt thích lên Cloud lúc này:', err);
+      }
     }
   };
+
+  // Cập nhật danh sách thẻ (tags) cho một kỷ niệm đã đăng (cập nhật nhẹ qua updateDoc + đồng bộ localStorage)
+  const handleUpdateMemoryTags = async (id: string, nextTags: string[]) => {
+    const cleanedTags = dedupeTags(nextTags);
+    const finalTags = cleanedTags.length > 0 ? cleanedTags : ['Kỷ niệm'];
+    const primaryTag = finalTags[0];
+
+    let targetMem: Memory | null = null;
+    const updated = memories.map((m) => {
+      if (m.id === id) {
+        targetMem = { ...m, tag: primaryTag, tags: finalTags };
+        return targetMem;
+      }
+      return m;
+    });
+
+    setMemories(updated);
+    saveMemoriesToStorage(updated);
+    if (targetMem) {
+      const memToSync: Memory = targetMem;
+      await updateSharedMemoryFields(
+        id,
+        { tag: primaryTag, tags: finalTags },
+        memToSync
+      );
+    }
+  };
+
+  const existingCustomTags = useMemo(
+    () =>
+      buildTagFilterStats(memories)
+        .filter((t) => t.isCustom)
+        .map((t) => t.name),
+    [memories]
+  );
 
   // Xóa kỷ niệm
   const handleDeleteMemory = async (id: string) => {
@@ -265,8 +311,8 @@ export function App() {
     if (target) {
       await deleteMemoryCloudAssets(target);
     }
-    if (selectedLightboxIndex !== null) {
-      setSelectedLightboxIndex(null);
+    if (selectedLightboxId === id) {
+      setSelectedLightboxId(null);
     }
   };
 
@@ -282,7 +328,13 @@ export function App() {
     await saveBackgroundSettingsBoth(newSettings);
   };
 
-  // Điều hướng xem ảnh phóng to
+  // Điều hướng xem ảnh phóng to (theo ID để không bị nhảy ảnh khi danh sách đồng bộ mới)
+  const selectedLightboxIndex = useMemo(() => {
+    if (!selectedLightboxId) return null;
+    const idx = memories.findIndex((m) => m.id === selectedLightboxId);
+    return idx !== -1 ? idx : null;
+  }, [memories, selectedLightboxId]);
+
   const activeLightboxMemory =
     selectedLightboxIndex !== null && memories[selectedLightboxIndex]
       ? memories[selectedLightboxIndex]
@@ -290,13 +342,13 @@ export function App() {
 
   const handlePrevLightbox = () => {
     if (selectedLightboxIndex !== null && selectedLightboxIndex > 0) {
-      setSelectedLightboxIndex(selectedLightboxIndex - 1);
+      setSelectedLightboxId(memories[selectedLightboxIndex - 1].id);
     }
   };
 
   const handleNextLightbox = () => {
     if (selectedLightboxIndex !== null && selectedLightboxIndex < memories.length - 1) {
-      setSelectedLightboxIndex(selectedLightboxIndex + 1);
+      setSelectedLightboxId(memories[selectedLightboxIndex + 1].id);
     }
   };
 
@@ -361,11 +413,11 @@ export function App() {
           coupleInfo={coupleInfo}
           onToggleLike={handleToggleLike}
           onDeleteMemory={handleDeleteMemory}
+          onUpdateMemoryTags={handleUpdateMemoryTags}
           fontClass={currentFontClass}
           onOpenFontModal={() => setIsFontModalOpen(true)}
           onOpenLightbox={(mem) => {
-            const idx = memories.findIndex((m) => m.id === mem.id);
-            if (idx !== -1) setSelectedLightboxIndex(idx);
+            setSelectedLightboxId(mem.id);
           }}
           onOpenShare={(mem) => setSelectedShareMemory(mem)}
           onOpenQuickUpload={() => setIsUploadOpen(true)}
@@ -442,6 +494,7 @@ export function App() {
         onClose={() => setIsUploadOpen(false)}
         onAddMemory={handleAddMemory}
         coupleInfo={coupleInfo}
+        availableCustomTags={existingCustomTags}
         fontClass={currentFontClass}
         currentFont={currentFont}
         onOpenFontModal={() => setIsFontModalOpen(true)}
@@ -481,7 +534,7 @@ export function App() {
       {activeLightboxMemory && (
         <LightboxModal
           memory={activeLightboxMemory}
-          onClose={() => setSelectedLightboxIndex(null)}
+          onClose={() => setSelectedLightboxId(null)}
           onPrev={handlePrevLightbox}
           onNext={handleNextLightbox}
           hasPrev={selectedLightboxIndex !== null && selectedLightboxIndex > 0}
@@ -490,7 +543,7 @@ export function App() {
           fontClass={currentFontClass}
           onOpenShare={(mem) => {
             setSelectedShareMemory(mem);
-            setSelectedLightboxIndex(null);
+            setSelectedLightboxId(null);
           }}
         />
       )}
